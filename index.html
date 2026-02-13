@@ -1033,6 +1033,11 @@
 
             let completed = 0;
             const CONCURRENCY = 3; // Scan 3 URLs at a time
+            const bulkStartTime = Date.now();
+            const bulkTimerInterval = setInterval(() => {
+                const elapsed = ((Date.now() - bulkStartTime) / 1000).toFixed(1);
+                progressText.textContent = `Scanning ${Math.min(completed + 1, urls.length)} / ${urls.length} — ${elapsed}s`;
+            }, 100);
 
             // Use more resilient settings for bulk mode
             fetchOptions = { retries: 2, timeoutMs: 30000, retryDelay: 2000 };
@@ -1041,7 +1046,6 @@
             for (let i = 0; i < urls.length; i += CONCURRENCY) {
                 const batch = urls.slice(i, i + CONCURRENCY);
 
-                progressText.textContent = `Scanning ${completed + 1}–${Math.min(completed + batch.length, urls.length)} / ${urls.length}`;
                 progressBar.style.width = `${(completed / urls.length) * 100}%`;
 
                 const batchResults = await Promise.allSettled(
@@ -1088,8 +1092,10 @@
 
             // Reset to default settings
             fetchOptions = { retries: 2, timeoutMs: 30000, retryDelay: 2000 };
+            clearInterval(bulkTimerInterval);
 
-            progressText.textContent = `Done — ${completed} / ${urls.length}`;
+            const totalElapsed = ((Date.now() - bulkStartTime) / 1000).toFixed(1);
+            progressText.textContent = `Done — ${completed} / ${urls.length} in ${totalElapsed}s`;
             btn.disabled = false;
 
             // Show summary
