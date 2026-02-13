@@ -557,21 +557,24 @@
             return new URL(url);
         }
 
-        async function proxyFetch(url, retries = 2) {
+        async function proxyFetch(url, retries = 1, timeoutMs = 8000) {
             for (let i = 0; i <= retries; i++) {
                 try {
-                    const resp = await fetch(PROXY + encodeURIComponent(url));
+                    const controller = new AbortController();
+                    const timer = setTimeout(() => controller.abort(), timeoutMs);
+                    const resp = await fetch(PROXY + encodeURIComponent(url), { signal: controller.signal });
+                    clearTimeout(timer);
                     if (!resp.ok) {
                         if (i < retries && (resp.status === 429 || resp.status >= 500)) {
-                            await delay(1500 * (i + 1));
+                            await delay(1000);
                             continue;
                         }
                         throw new Error(`HTTP ${resp.status}`);
                     }
                     return resp;
                 } catch (err) {
-                    if (i < retries) {
-                        await delay(1500 * (i + 1));
+                    if (i < retries && err.name !== 'AbortError') {
+                        await delay(1000);
                         continue;
                     }
                     throw err;
@@ -626,7 +629,7 @@
             for (const m of pluginMatches) plugins.add(m[1]);
 
             // Run all endpoint checks in parallel
-            const [loginResult, apiResult, xmlrpcResult, feedResult] = await Promise.allSettled([
+            const [loginResult, apiResult, xmlrpcResult, feedResult, readmeResult] = await Promise.allSettled([
                 // 6. wp-login.php
                 proxyFetch(baseUrl.origin + '/wp-login.php')
                     .then(r => r.text())
@@ -643,26 +646,26 @@
 
                 // RSS feed for version
                 fetchText(baseUrl.origin + '/feed/')
-                    .then(t => { const m = t.match(/generator>https?:\/\/wordpress\.org\/\?v=([\d.]+)</i); return m ? m[1] : null; })
+                    .then(t => { const m = t.match(/generator>https?:\/\/wordpress\.org\/\?v=([\d.]+)</i); return m ? m[1] : null; }),
+
+                // readme.html for version
+                fetchText(baseUrl.origin + '/readme.html')
+                    .then(t => {
+                        const m = t.match(/wordpress[^<]*?version\s*([\d.]+)/i) || t.match(/<br\s*\/?\s*>\s*version\s*([\d.]+)/i);
+                        return m ? m[1] : null;
+                    })
             ]);
 
             checks['wp-login.php'] = loginResult.status === 'fulfilled' && loginResult.value;
             checks['REST API (/wp-json/)'] = apiResult.status === 'fulfilled' && apiResult.value;
             checks['XML-RPC'] = xmlrpcResult.status === 'fulfilled' && xmlrpcResult.value;
 
-            // Version from RSS feed
+            // Version from RSS feed (preferred), then readme.html fallback
             if (!version && feedResult.status === 'fulfilled' && feedResult.value) {
                 version = feedResult.value;
             }
-
-            // readme.html fallback for version (only if still no version)
-            if (!version) {
-                try {
-                    const readmeText = await fetchText(baseUrl.origin + '/readme.html');
-                    const rvMatch = readmeText.match(/wordpress[^<]*?version\s*([\d.]+)/i)
-                        || readmeText.match(/<br\s*\/?\s*>\s*version\s*([\d.]+)/i);
-                    if (rvMatch) version = rvMatch[1];
-                } catch { /* ignore */ }
+            if (!version && readmeResult.status === 'fulfilled' && readmeResult.value) {
+                version = readmeResult.value;
             }
 
             checks['Plugins Detected'] = plugins.size > 0;
