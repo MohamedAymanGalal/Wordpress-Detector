@@ -951,7 +951,7 @@
 
             verdict.className = 'verdict ' + (isWordPress ? 'is-wp' : 'not-wp');
             verdictText.textContent = isWordPress ? 'WordPress Detected' : 'Not WordPress';
-            confidenceText.textContent = `Confidence: ${confidence}% (${Object.values(checks).filter(Boolean).length}/${Object.keys(checks).length} checks passed)${scanTime ? ' \u00B7 ' + scanTime + 's' : ''}`;
+            confidenceText.textContent = `${Object.values(checks).filter(Boolean).length}/${Object.keys(checks).length} checks passed${scanTime ? ' \u00B7 ' + scanTime + 's' : ''}`;
 
             const infoSection = document.getElementById('infoSection');
             const infoRows = document.getElementById('infoRows');
@@ -1107,7 +1107,6 @@
                 detailsHtml = `<div class="bulk-result-details" id="${id}">`;
                 if (result.version) detailsHtml += `<div class="bulk-detail-row"><span>Version</span><span class="val">${result.version}</span></div>`;
                 if (result.theme) detailsHtml += `<div class="bulk-detail-row"><span>Theme</span><span class="val">${result.theme}</span></div>`;
-                detailsHtml += `<div class="bulk-detail-row"><span>Confidence</span><span class="val">${result.confidence}%</span></div>`;
                 detailsHtml += `</div>`;
             }
 
