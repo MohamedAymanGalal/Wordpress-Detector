@@ -1,0 +1,950 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WordPress Detector</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0f172a;
+            color: #e2e8f0;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 700px;
+            padding: 20px;
+        }
+
+        .card {
+            background: #1e293b;
+            border-radius: 16px;
+            padding: 40px 32px;
+            box-shadow: 0 25px 50px rgba(0, 0, 0, 0.4);
+        }
+
+        h1 {
+            text-align: center;
+            font-size: 28px;
+            margin-bottom: 8px;
+            color: #f8fafc;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #94a3b8;
+            font-size: 14px;
+            margin-bottom: 24px;
+        }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 24px;
+            background: #0f172a;
+            border-radius: 10px;
+            padding: 4px;
+        }
+
+        .tab {
+            flex: 1;
+            padding: 10px 16px;
+            border: none;
+            border-radius: 8px;
+            background: transparent;
+            color: #94a3b8;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .tab.active {
+            background: #3b82f6;
+            color: white;
+        }
+
+        .tab:not(.active):hover {
+            color: #e2e8f0;
+        }
+
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        /* Input styles */
+        .input-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 24px;
+        }
+
+        input[type="text"] {
+            flex: 1;
+            padding: 14px 18px;
+            border: 2px solid #334155;
+            border-radius: 10px;
+            background: #0f172a;
+            color: #f8fafc;
+            font-size: 15px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        input[type="text"]:focus { border-color: #3b82f6; }
+
+        textarea {
+            width: 100%;
+            padding: 14px 18px;
+            border: 2px solid #334155;
+            border-radius: 10px;
+            background: #0f172a;
+            color: #f8fafc;
+            font-size: 14px;
+            font-family: inherit;
+            outline: none;
+            resize: vertical;
+            min-height: 120px;
+            margin-bottom: 12px;
+            transition: border-color 0.2s;
+        }
+
+        textarea:focus { border-color: #3b82f6; }
+
+        button {
+            padding: 14px 28px;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+            white-space: nowrap;
+        }
+
+        button:hover { background: #2563eb; }
+        button:disabled {
+            background: #334155;
+            cursor: not-allowed;
+        }
+
+        .bulk-actions {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 24px;
+        }
+
+        .bulk-actions button { flex: 1; }
+
+        .btn-secondary {
+            background: #334155;
+        }
+
+        .btn-secondary:hover { background: #475569; }
+
+        /* Loading */
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 40px 0;
+        }
+
+        .loading.active { display: block; }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #334155;
+            border-top-color: #3b82f6;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin: 0 auto 16px;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .loading-text {
+            color: #94a3b8;
+            font-size: 14px;
+        }
+
+        /* Results */
+        .results { display: none; }
+        .results.active { display: block; }
+
+        .verdict {
+            text-align: center;
+            padding: 24px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+        }
+
+        .verdict.is-wp {
+            background: rgba(34, 197, 94, 0.1);
+            border: 1px solid rgba(34, 197, 94, 0.3);
+        }
+
+        .verdict.not-wp {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
+        .verdict-label {
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 8px;
+            color: #94a3b8;
+        }
+
+        .verdict-text {
+            font-size: 24px;
+            font-weight: 700;
+        }
+
+        .verdict.is-wp .verdict-text { color: #22c55e; }
+        .verdict.not-wp .verdict-text { color: #ef4444; }
+
+        .confidence {
+            font-size: 13px;
+            color: #94a3b8;
+            margin-top: 6px;
+        }
+
+        /* Details */
+        .details-section { margin-bottom: 16px; }
+
+        .details-title {
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #64748b;
+            margin-bottom: 10px;
+            padding-bottom: 6px;
+            border-bottom: 1px solid #334155;
+        }
+
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            font-size: 14px;
+        }
+
+        .detail-row .label { color: #cbd5e1; }
+        .detail-row .value { color: #f8fafc; font-weight: 500; }
+
+        .check-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 6px 0;
+            font-size: 14px;
+        }
+
+        .check-icon {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            flex-shrink: 0;
+        }
+
+        .check-icon.pass {
+            background: rgba(34, 197, 94, 0.15);
+            color: #22c55e;
+        }
+
+        .check-icon.fail {
+            background: rgba(239, 68, 68, 0.15);
+            color: #ef4444;
+        }
+
+        .plugins-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 4px;
+        }
+
+        .plugin-tag {
+            background: #334155;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            color: #cbd5e1;
+        }
+
+        .error-msg {
+            display: none;
+            text-align: center;
+            padding: 20px;
+            color: #f87171;
+            background: rgba(239, 68, 68, 0.1);
+            border-radius: 12px;
+            border: 1px solid rgba(239, 68, 68, 0.2);
+            font-size: 14px;
+        }
+
+        .error-msg.active { display: block; }
+
+        /* Bulk results */
+        .bulk-progress {
+            display: none;
+            margin-bottom: 20px;
+        }
+
+        .bulk-progress.active { display: block; }
+
+        .progress-bar-container {
+            background: #0f172a;
+            border-radius: 8px;
+            height: 8px;
+            overflow: hidden;
+            margin-bottom: 8px;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: #3b82f6;
+            border-radius: 8px;
+            transition: width 0.3s;
+            width: 0%;
+        }
+
+        .progress-text {
+            font-size: 13px;
+            color: #94a3b8;
+            text-align: center;
+        }
+
+        .bulk-results { margin-top: 16px; }
+
+        .bulk-result-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 16px;
+            background: #0f172a;
+            border-radius: 10px;
+            margin-bottom: 8px;
+            gap: 12px;
+        }
+
+        .bulk-result-url {
+            font-size: 14px;
+            color: #cbd5e1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            flex: 1;
+            min-width: 0;
+        }
+
+        .bulk-result-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-shrink: 0;
+        }
+
+        .bulk-result-version {
+            font-size: 12px;
+            color: #94a3b8;
+        }
+
+        .bulk-badge {
+            padding: 4px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
+        .bulk-badge.wp {
+            background: rgba(34, 197, 94, 0.15);
+            color: #22c55e;
+        }
+
+        .bulk-badge.not-wp {
+            background: rgba(239, 68, 68, 0.15);
+            color: #ef4444;
+        }
+
+        .bulk-badge.error {
+            background: rgba(234, 179, 8, 0.15);
+            color: #eab308;
+        }
+
+        .bulk-summary {
+            display: flex;
+            gap: 16px;
+            justify-content: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .bulk-summary-item {
+            text-align: center;
+            padding: 12px 20px;
+            background: #0f172a;
+            border-radius: 10px;
+        }
+
+        .bulk-summary-count {
+            font-size: 24px;
+            font-weight: 700;
+            color: #f8fafc;
+        }
+
+        .bulk-summary-label {
+            font-size: 12px;
+            color: #94a3b8;
+            margin-top: 2px;
+        }
+
+        .bulk-summary-item.wp .bulk-summary-count { color: #22c55e; }
+        .bulk-summary-item.not-wp .bulk-summary-count { color: #ef4444; }
+        .bulk-summary-item.err .bulk-summary-count { color: #eab308; }
+
+        .bulk-detail-toggle {
+            background: none;
+            border: none;
+            color: #3b82f6;
+            cursor: pointer;
+            font-size: 12px;
+            padding: 4px 8px;
+        }
+
+        .bulk-detail-toggle:hover { text-decoration: underline; }
+
+        .bulk-result-details {
+            display: none;
+            padding: 12px 16px;
+            background: #1a2536;
+            border-radius: 0 0 10px 10px;
+            margin-top: -8px;
+            margin-bottom: 8px;
+            font-size: 13px;
+        }
+
+        .bulk-result-details.active { display: block; }
+
+        .bulk-detail-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 3px 0;
+            color: #94a3b8;
+        }
+
+        .bulk-detail-row .val { color: #cbd5e1; }
+
+        .export-btn {
+            background: #334155;
+            font-size: 13px;
+            padding: 10px 20px;
+        }
+
+        .export-btn:hover { background: #475569; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <h1>WordPress Detector</h1>
+            <p class="subtitle">Check if websites run on WordPress</p>
+
+            <div class="tabs">
+                <button class="tab active" onclick="switchTab('single')">Single URL</button>
+                <button class="tab" onclick="switchTab('bulk')">Bulk Check</button>
+            </div>
+
+            <!-- Single URL Tab -->
+            <div class="tab-content active" id="tab-single">
+                <div class="input-group">
+                    <input type="text" id="urlInput" placeholder="e.g. example.com" />
+                    <button id="scanBtn" onclick="scan()">Scan</button>
+                </div>
+
+                <div class="error-msg" id="errorMsg"></div>
+
+                <div class="loading" id="loading">
+                    <div class="spinner"></div>
+                    <div class="loading-text" id="loadingText">Scanning...</div>
+                </div>
+
+                <div class="results" id="results">
+                    <div class="verdict" id="verdict">
+                        <div class="verdict-label">Result</div>
+                        <div class="verdict-text" id="verdictText"></div>
+                        <div class="confidence" id="confidenceText"></div>
+                    </div>
+
+                    <div id="infoSection" class="details-section" style="display:none">
+                        <div class="details-title">Information</div>
+                        <div id="infoRows"></div>
+                    </div>
+
+                    <div id="pluginsSection" class="details-section" style="display:none">
+                        <div class="details-title">Detected Plugins</div>
+                        <div class="plugins-list" id="pluginsList"></div>
+                    </div>
+
+                    <div class="details-section">
+                        <div class="details-title">Detection Checks</div>
+                        <div id="checksList"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bulk Check Tab -->
+            <div class="tab-content" id="tab-bulk">
+                <textarea id="bulkInput" placeholder="Enter one URL per line, e.g.&#10;example.com&#10;another-site.org&#10;mysite.net"></textarea>
+
+                <div class="bulk-actions">
+                    <button id="bulkScanBtn" onclick="bulkScan()">Scan All</button>
+                    <button class="btn-secondary" onclick="clearBulk()">Clear</button>
+                </div>
+
+                <div class="error-msg" id="bulkErrorMsg"></div>
+
+                <div class="bulk-progress" id="bulkProgress">
+                    <div class="progress-bar-container">
+                        <div class="progress-bar" id="progressBar"></div>
+                    </div>
+                    <div class="progress-text" id="progressText">0 / 0</div>
+                </div>
+
+                <div id="bulkResultsContainer" style="display:none">
+                    <div class="bulk-summary" id="bulkSummary"></div>
+                    <div style="text-align:center; margin-bottom: 16px;">
+                        <button class="export-btn" onclick="exportCSV()">Export CSV</button>
+                    </div>
+                    <div class="bulk-results" id="bulkResults"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const PROXY = 'https://api.allorigins.win/raw?url=';
+
+        // --- Tab switching ---
+        function switchTab(tab) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            document.querySelector(`.tab-content#tab-${tab}`).classList.add('active');
+            document.querySelectorAll('.tab')[tab === 'single' ? 0 : 1].classList.add('active');
+        }
+
+        // --- Shared utilities ---
+        function normalizeUrl(input) {
+            let url = input.trim();
+            if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+            return new URL(url);
+        }
+
+        async function proxyFetch(url, retries = 2) {
+            for (let i = 0; i <= retries; i++) {
+                try {
+                    const resp = await fetch(PROXY + encodeURIComponent(url));
+                    if (!resp.ok) {
+                        if (i < retries && (resp.status === 429 || resp.status >= 500)) {
+                            await delay(1500 * (i + 1));
+                            continue;
+                        }
+                        throw new Error(`HTTP ${resp.status}`);
+                    }
+                    return resp;
+                } catch (err) {
+                    if (i < retries) {
+                        await delay(1500 * (i + 1));
+                        continue;
+                    }
+                    throw err;
+                }
+            }
+        }
+
+        async function fetchText(url) {
+            const resp = await proxyFetch(url);
+            return await resp.text();
+        }
+
+        function delay(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
+        // --- Core detection logic (shared by single & bulk) ---
+        async function detectWordPress(urlString) {
+            const baseUrl = normalizeUrl(urlString);
+            const checks = {};
+            let html = '';
+            let version = null;
+            let theme = null;
+            let plugins = new Set();
+
+            // Fetch homepage
+            html = await fetchText(baseUrl.origin);
+
+            // 1. Meta generator tag
+            const generatorMatch = html.match(/<meta[^>]+name=["']generator["'][^>]+content=["']([^"']*wordpress[^"']*)["']/i)
+                || html.match(/<meta[^>]+content=["']([^"']*wordpress[^"']*)["'][^>]+name=["']generator["']/i);
+            checks['Meta Generator Tag'] = !!generatorMatch;
+            if (generatorMatch) {
+                const vMatch = generatorMatch[1].match(/wordpress\s*\.?\s*([\d.]+)/i);
+                if (vMatch) version = vMatch[1];
+            }
+
+            // Version from RSS feed (very reliable)
+            if (!version) {
+                try {
+                    const feedText = await fetchText(baseUrl.origin + '/feed/');
+                    const feedMatch = feedText.match(/generator>https?:\/\/wordpress\.org\/\?v=([\d.]+)</i);
+                    if (feedMatch) version = feedMatch[1];
+                } catch { /* ignore */ }
+            }
+
+
+            // 2. wp-content / wp-includes
+            checks['wp-content/wp-includes Paths'] = /\/wp-content\//i.test(html) || /\/wp-includes\//i.test(html);
+
+            // 3. wp-emoji / wp-embed scripts
+            checks['WordPress Scripts (emoji/embed)'] = /wp-emoji-release/i.test(html) || /wp-embed\.min\.js/i.test(html);
+
+            // 4. Theme detection
+            const themeMatches = html.matchAll(/\/wp-content\/themes\/([a-z0-9_-]+)\//gi);
+            const themes = new Set();
+            for (const m of themeMatches) themes.add(m[1]);
+            if (themes.size > 0) theme = [...themes][0];
+            checks['Theme Detected'] = themes.size > 0;
+
+            // 5. Plugin detection
+            const pluginMatches = html.matchAll(/\/wp-content\/plugins\/([a-z0-9_-]+)\//gi);
+            for (const m of pluginMatches) plugins.add(m[1]);
+
+            // 6. wp-login.php
+            try {
+                const loginResp = await proxyFetch(baseUrl.origin + '/wp-login.php');
+                const loginHtml = await loginResp.text();
+                checks['wp-login.php'] = /wp-login|user_login|wp-submit/i.test(loginHtml);
+            } catch {
+                checks['wp-login.php'] = false;
+            }
+
+            // 7. REST API
+            try {
+                const apiText = await fetchText(baseUrl.origin + '/wp-json/');
+                const apiData = JSON.parse(apiText);
+                checks['REST API (/wp-json/)'] = !!(apiData && (apiData.name || apiData.namespaces));
+            } catch {
+                checks['REST API (/wp-json/)'] = false;
+            }
+
+            // 8. XML-RPC
+            try {
+                const xmlrpcResp = await proxyFetch(baseUrl.origin + '/xmlrpc.php');
+                const xmlrpcText = await xmlrpcResp.text();
+                checks['XML-RPC'] = /xml-rpc server accepts post requests only/i.test(xmlrpcText)
+                    || /xmlrpc/i.test(xmlrpcText);
+            } catch {
+                checks['XML-RPC'] = false;
+            }
+
+            // 9. readme.html for version
+            if (!version) {
+                try {
+                    const readmeText = await fetchText(baseUrl.origin + '/readme.html');
+                    const rvMatch = readmeText.match(/wordpress[^<]*?version\s*([\d.]+)/i)
+                        || readmeText.match(/<br\s*\/?\s*>\s*version\s*([\d.]+)/i);
+                    if (rvMatch) version = rvMatch[1];
+                } catch { /* ignore */ }
+            }
+
+            checks['Plugins Detected'] = plugins.size > 0;
+
+            const passed = Object.values(checks).filter(Boolean).length;
+            const total = Object.keys(checks).length;
+            const isWordPress = passed >= 2;
+            const confidence = Math.round((passed / total) * 100);
+
+            return {
+                url: baseUrl.origin,
+                isWordPress,
+                confidence,
+                checks,
+                version,
+                theme,
+                plugins: [...plugins]
+            };
+        }
+
+        // --- Single scan ---
+        function setLoading(text) {
+            document.getElementById('loadingText').textContent = text;
+        }
+
+        async function scan() {
+            const input = document.getElementById('urlInput').value;
+            if (!input.trim()) return;
+
+            const btn = document.getElementById('scanBtn');
+            const loading = document.getElementById('loading');
+            const results = document.getElementById('results');
+            const errorMsg = document.getElementById('errorMsg');
+
+            btn.disabled = true;
+            loading.classList.add('active');
+            results.classList.remove('active');
+            errorMsg.classList.remove('active');
+            setLoading('Scanning...');
+
+            try {
+                const result = await detectWordPress(input);
+                displayResults(result.isWordPress, result.confidence, result.checks, result.version, result.theme, result.plugins);
+            } catch (err) {
+                showError('errorMsg', 'Could not fetch the website. Make sure the URL is correct and the site is accessible.');
+            }
+
+            btn.disabled = false;
+            loading.classList.remove('active');
+        }
+
+        function showError(id, msg) {
+            const el = document.getElementById(id);
+            el.textContent = msg;
+            el.classList.add('active');
+        }
+
+        function displayResults(isWordPress, confidence, checks, version, theme, plugins) {
+            const results = document.getElementById('results');
+            const verdict = document.getElementById('verdict');
+            const verdictText = document.getElementById('verdictText');
+            const confidenceText = document.getElementById('confidenceText');
+
+            verdict.className = 'verdict ' + (isWordPress ? 'is-wp' : 'not-wp');
+            verdictText.textContent = isWordPress ? 'WordPress Detected' : 'Not WordPress';
+            confidenceText.textContent = `Confidence: ${confidence}% (${Object.values(checks).filter(Boolean).length}/${Object.keys(checks).length} checks passed)`;
+
+            const infoSection = document.getElementById('infoSection');
+            const infoRows = document.getElementById('infoRows');
+            infoRows.innerHTML = '';
+
+            if (version || theme) {
+                infoSection.style.display = 'block';
+                if (version) {
+                    infoRows.innerHTML += `<div class="detail-row"><span class="label">WordPress Version</span><span class="value">${version}</span></div>`;
+                }
+                if (theme) {
+                    infoRows.innerHTML += `<div class="detail-row"><span class="label">Active Theme</span><span class="value">${theme}</span></div>`;
+                }
+            } else {
+                infoSection.style.display = 'none';
+            }
+
+            const pluginsSection = document.getElementById('pluginsSection');
+            const pluginsList = document.getElementById('pluginsList');
+            pluginsList.innerHTML = '';
+
+            if (plugins.length > 0) {
+                pluginsSection.style.display = 'block';
+                plugins.forEach(p => {
+                    pluginsList.innerHTML += `<span class="plugin-tag">${p}</span>`;
+                });
+            } else {
+                pluginsSection.style.display = 'none';
+            }
+
+            const checksList = document.getElementById('checksList');
+            checksList.innerHTML = '';
+            for (const [name, passed] of Object.entries(checks)) {
+                checksList.innerHTML += `
+                    <div class="check-item">
+                        <span class="check-icon ${passed ? 'pass' : 'fail'}">${passed ? '\u2713' : '\u2717'}</span>
+                        <span>${name}</span>
+                    </div>`;
+            }
+
+            results.classList.add('active');
+        }
+
+        // --- Bulk scan ---
+        let bulkResultsData = [];
+
+        async function bulkScan() {
+            const input = document.getElementById('bulkInput').value.trim();
+            if (!input) return;
+
+            const urls = input.split('\n').map(u => u.trim()).filter(u => u.length > 0);
+            if (urls.length === 0) return;
+
+            const btn = document.getElementById('bulkScanBtn');
+            const errorMsg = document.getElementById('bulkErrorMsg');
+            const progressEl = document.getElementById('bulkProgress');
+            const progressBar = document.getElementById('progressBar');
+            const progressText = document.getElementById('progressText');
+            const container = document.getElementById('bulkResultsContainer');
+            const resultsEl = document.getElementById('bulkResults');
+
+            btn.disabled = true;
+            errorMsg.classList.remove('active');
+            progressEl.classList.add('active');
+            container.style.display = 'none';
+            resultsEl.innerHTML = '';
+            bulkResultsData = [];
+
+            let completed = 0;
+
+            for (let i = 0; i < urls.length; i++) {
+                const url = urls[i];
+                if (i > 0) await delay(1000);
+
+                progressText.textContent = `${completed + 1} / ${urls.length} — ${url}`;
+                progressBar.style.width = `${((completed) / urls.length) * 100}%`;
+
+                try {
+                    const result = await detectWordPress(url);
+                    bulkResultsData.push(result);
+                    appendBulkResult(result, resultsEl);
+                } catch (err) {
+                    const errorResult = {
+                        url: url,
+                        isWordPress: false,
+                        confidence: 0,
+                        checks: {},
+                        version: null,
+                        theme: null,
+                        plugins: [],
+                        error: true
+                    };
+                    bulkResultsData.push(errorResult);
+                    appendBulkResult(errorResult, resultsEl);
+                }
+
+                completed++;
+                progressBar.style.width = `${(completed / urls.length) * 100}%`;
+            }
+
+            progressText.textContent = `Done — ${completed} / ${urls.length}`;
+            btn.disabled = false;
+
+            // Show summary
+            const wpCount = bulkResultsData.filter(r => r.isWordPress).length;
+            const notWpCount = bulkResultsData.filter(r => !r.isWordPress && !r.error).length;
+            const errCount = bulkResultsData.filter(r => r.error).length;
+
+            document.getElementById('bulkSummary').innerHTML = `
+                <div class="bulk-summary-item wp">
+                    <div class="bulk-summary-count">${wpCount}</div>
+                    <div class="bulk-summary-label">WordPress</div>
+                </div>
+                <div class="bulk-summary-item not-wp">
+                    <div class="bulk-summary-count">${notWpCount}</div>
+                    <div class="bulk-summary-label">Not WordPress</div>
+                </div>
+                <div class="bulk-summary-item err">
+                    <div class="bulk-summary-count">${errCount}</div>
+                    <div class="bulk-summary-label">Errors</div>
+                </div>
+            `;
+
+            container.style.display = 'block';
+        }
+
+        function appendBulkResult(result, container) {
+            const id = 'detail-' + Math.random().toString(36).slice(2, 9);
+            let badgeClass, badgeText;
+
+            if (result.error) {
+                badgeClass = 'error';
+                badgeText = 'Error';
+            } else if (result.isWordPress) {
+                badgeClass = 'wp';
+                badgeText = 'WordPress';
+            } else {
+                badgeClass = 'not-wp';
+                badgeText = 'Not WP';
+            }
+
+            const versionText = result.version ? `v${result.version}` : '';
+            const themeText = result.theme ? result.theme : '';
+
+            let detailsHtml = '';
+            if (!result.error) {
+                detailsHtml = `<div class="bulk-result-details" id="${id}">`;
+                if (result.version) detailsHtml += `<div class="bulk-detail-row"><span>Version</span><span class="val">${result.version}</span></div>`;
+                if (result.theme) detailsHtml += `<div class="bulk-detail-row"><span>Theme</span><span class="val">${result.theme}</span></div>`;
+                detailsHtml += `<div class="bulk-detail-row"><span>Confidence</span><span class="val">${result.confidence}%</span></div>`;
+                detailsHtml += `</div>`;
+            }
+
+            container.innerHTML += `
+                <div class="bulk-result-item">
+                    <span class="bulk-result-url" title="${result.url}">${result.url}</span>
+                    <div class="bulk-result-info">
+                        <span class="bulk-result-version">${versionText}</span>
+                        <span class="bulk-badge ${badgeClass}">${badgeText}</span>
+                        ${!result.error ? `<button class="bulk-detail-toggle" onclick="toggleDetail('${id}')">Details</button>` : ''}
+                    </div>
+                </div>
+                ${detailsHtml}
+            `;
+        }
+
+        function toggleDetail(id) {
+            document.getElementById(id).classList.toggle('active');
+        }
+
+        function clearBulk() {
+            document.getElementById('bulkInput').value = '';
+            document.getElementById('bulkResults').innerHTML = '';
+            document.getElementById('bulkResultsContainer').style.display = 'none';
+            document.getElementById('bulkProgress').classList.remove('active');
+            document.getElementById('bulkErrorMsg').classList.remove('active');
+            bulkResultsData = [];
+        }
+
+        function exportCSV() {
+            if (bulkResultsData.length === 0) return;
+
+            const rows = [['URL', 'Is WordPress', 'Version', 'Theme', 'Plugins', 'Confidence']];
+            for (const r of bulkResultsData) {
+                rows.push([
+                    r.url,
+                    r.error ? 'Error' : (r.isWordPress ? 'Yes' : 'No'),
+                    r.version || '',
+                    r.theme || '',
+                    r.plugins.join('; '),
+                    r.error ? '' : r.confidence + '%'
+                ]);
+            }
+
+            const csv = rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'wordpress-scan-results.csv';
+            a.click();
+            URL.revokeObjectURL(a.href);
+        }
+
+        // Enter key for single scan
+        document.getElementById('urlInput').addEventListener('keydown', e => {
+            if (e.key === 'Enter') scan();
+        });
+    </script>
+</body>
+</html>
