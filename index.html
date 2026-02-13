@@ -465,6 +465,80 @@
         }
 
         .export-btn:hover { background: #475569; }
+
+        /* Sub-tabs */
+        .sub-tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 16px;
+            background: #0f172a;
+            border-radius: 8px;
+            padding: 3px;
+        }
+
+        .sub-tab {
+            flex: 1;
+            padding: 8px 12px;
+            border: none;
+            border-radius: 6px;
+            background: transparent;
+            color: #94a3b8;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .sub-tab.active {
+            background: #334155;
+            color: #f8fafc;
+        }
+
+        .sub-tab:not(.active):hover { color: #e2e8f0; }
+
+        .sub-tab-content { display: none; }
+        .sub-tab-content.active { display: block; }
+
+        /* Upload area */
+        .upload-area {
+            border: 2px dashed #334155;
+            border-radius: 10px;
+            padding: 32px 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: border-color 0.2s, background 0.2s;
+            margin-bottom: 12px;
+        }
+
+        .upload-area:hover, .upload-area.dragover {
+            border-color: #3b82f6;
+            background: rgba(59, 130, 246, 0.05);
+        }
+
+        .upload-icon { font-size: 32px; margin-bottom: 8px; }
+        .upload-text { font-size: 14px; color: #cbd5e1; margin-bottom: 4px; }
+        .upload-hint { font-size: 12px; color: #64748b; }
+
+        .file-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 14px;
+            background: #0f172a;
+            border-radius: 8px;
+            margin-bottom: 12px;
+            font-size: 13px;
+            color: #cbd5e1;
+        }
+
+        .file-info #fileName {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .file-info #fileUrlCount { color: #94a3b8; white-space: nowrap; }
     </style>
 </head>
 <body>
@@ -518,7 +592,28 @@
 
             <!-- Bulk Check Tab -->
             <div class="tab-content" id="tab-bulk">
-                <textarea id="bulkInput" placeholder="Enter one URL per line, e.g.&#10;example.com&#10;another-site.org&#10;mysite.net"></textarea>
+                <div class="sub-tabs">
+                    <button class="sub-tab active" onclick="switchSubTab('type')">Type URLs</button>
+                    <button class="sub-tab" onclick="switchSubTab('upload')">Upload File</button>
+                </div>
+
+                <div class="sub-tab-content active" id="subtab-type">
+                    <textarea id="bulkInput" placeholder="Enter one URL per line, e.g.&#10;example.com&#10;another-site.org&#10;mysite.net"></textarea>
+                </div>
+
+                <div class="sub-tab-content" id="subtab-upload">
+                    <div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()">
+                        <div class="upload-icon">&#128196;</div>
+                        <div class="upload-text">Click to upload or drag & drop</div>
+                        <div class="upload-hint">CSV or Excel (.csv, .xlsx, .xls)</div>
+                        <input type="file" id="fileInput" accept=".csv,.xlsx,.xls" style="display:none" onchange="handleFileUpload(event)" />
+                    </div>
+                    <div class="file-info" id="fileInfo" style="display:none">
+                        <span id="fileName"></span>
+                        <span id="fileUrlCount"></span>
+                        <button class="btn-secondary" style="padding:6px 14px;font-size:12px" onclick="clearFile()">Remove</button>
+                    </div>
+                </div>
 
                 <div class="bulk-actions">
                     <button id="bulkScanBtn" onclick="bulkScan()">Scan All</button>
@@ -555,6 +650,108 @@
             document.querySelector(`.tab-content#tab-${tab}`).classList.add('active');
             document.querySelectorAll('.tab')[tab === 'single' ? 0 : 1].classList.add('active');
         }
+
+        function switchSubTab(tab) {
+            document.querySelectorAll('.sub-tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.sub-tab-content').forEach(t => t.classList.remove('active'));
+            document.getElementById('subtab-' + tab).classList.add('active');
+            document.querySelectorAll('.sub-tab')[tab === 'type' ? 0 : 1].classList.add('active');
+        }
+
+        // --- File upload ---
+        let uploadedUrls = [];
+
+        function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            processFile(file);
+        }
+
+        function processFile(file) {
+            const name = file.name.toLowerCase();
+
+            if (name.endsWith('.csv')) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const urls = parseCSVForUrls(e.target.result);
+                    setUploadedUrls(urls, file.name);
+                };
+                reader.readAsText(file);
+            } else if (name.endsWith('.xlsx') || name.endsWith('.xls')) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const urls = parseExcelForUrls(new Uint8Array(e.target.result));
+                    setUploadedUrls(urls, file.name);
+                };
+                reader.readAsArrayBuffer(file);
+            }
+        }
+
+        function parseCSVForUrls(text) {
+            const urls = [];
+            const lines = text.split(/\r?\n/);
+            for (const line of lines) {
+                // Split by comma, tab, or semicolon
+                const cells = line.split(/[,;\t]/);
+                for (const cell of cells) {
+                    const cleaned = cell.trim().replace(/^["']|["']$/g, '');
+                    if (looksLikeUrl(cleaned)) urls.push(cleaned);
+                }
+            }
+            return urls;
+        }
+
+        function parseExcelForUrls(data) {
+            // Simple XLSX parser — extract shared strings and look for URLs
+            const urls = [];
+            try {
+                const text = new TextDecoder('utf-8', { fatal: false }).decode(data);
+                // Extract anything that looks like a URL from the raw XML
+                const matches = text.matchAll(/(?:https?:\/\/)?(?:www\.)?([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}[^\s<>"',;)}\]]*?(?=[<"'\s,;)}\]]|$)/gi);
+                for (const m of matches) {
+                    const cleaned = m[0].trim();
+                    if (looksLikeUrl(cleaned) && !cleaned.includes('schemas.openxmlformats') && !cleaned.includes('schemas.microsoft')) {
+                        urls.push(cleaned);
+                    }
+                }
+            } catch { /* ignore */ }
+            return [...new Set(urls)];
+        }
+
+        function looksLikeUrl(str) {
+            if (!str || str.length < 4) return false;
+            return /^(https?:\/\/)?([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}/i.test(str);
+        }
+
+        function setUploadedUrls(urls, fileName) {
+            uploadedUrls = urls;
+            if (urls.length > 0) {
+                document.getElementById('fileInfo').style.display = 'flex';
+                document.getElementById('uploadArea').style.display = 'none';
+                document.getElementById('fileName').textContent = fileName;
+                document.getElementById('fileUrlCount').textContent = urls.length + ' URL' + (urls.length !== 1 ? 's' : '');
+            } else {
+                showError('bulkErrorMsg', 'No URLs found in the file.');
+                clearFile();
+            }
+        }
+
+        function clearFile() {
+            uploadedUrls = [];
+            document.getElementById('fileInput').value = '';
+            document.getElementById('fileInfo').style.display = 'none';
+            document.getElementById('uploadArea').style.display = 'block';
+        }
+
+        // Drag & drop
+        const uploadArea = document.getElementById('uploadArea');
+        uploadArea.addEventListener('dragover', (e) => { e.preventDefault(); uploadArea.classList.add('dragover'); });
+        uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('dragover'));
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            if (e.dataTransfer.files.length) processFile(e.dataTransfer.files[0]);
+        });
 
         // --- Shared utilities ---
         function normalizeUrl(input) {
@@ -802,10 +999,16 @@
         let bulkResultsData = [];
 
         async function bulkScan() {
-            const input = document.getElementById('bulkInput').value.trim();
-            if (!input) return;
+            let urls = [];
 
-            const urls = input.split('\n').map(u => u.trim()).filter(u => u.length > 0);
+            if (uploadedUrls.length > 0) {
+                urls = uploadedUrls;
+            } else {
+                const input = document.getElementById('bulkInput').value.trim();
+                if (!input) return;
+                urls = input.split('\n').map(u => u.trim()).filter(u => u.length > 0);
+            }
+
             if (urls.length === 0) return;
 
             const btn = document.getElementById('bulkScanBtn');
@@ -932,6 +1135,7 @@
             document.getElementById('bulkProgress').classList.remove('active');
             document.getElementById('bulkErrorMsg').classList.remove('active');
             bulkResultsData = [];
+            clearFile();
         }
 
         function exportCSV() {
