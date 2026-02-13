@@ -760,24 +760,28 @@
             return new URL(url);
         }
 
-        async function proxyFetch(url, retries = 1, timeoutMs = 8000) {
-            for (let i = 0; i <= retries; i++) {
+        let fetchOptions = { retries: 1, timeoutMs: 8000, retryDelay: 1000 };
+
+        async function proxyFetch(url, retries, timeoutMs) {
+            const maxRetries = retries !== undefined ? retries : fetchOptions.retries;
+            const timeout = timeoutMs !== undefined ? timeoutMs : fetchOptions.timeoutMs;
+            for (let i = 0; i <= maxRetries; i++) {
                 try {
                     const controller = new AbortController();
-                    const timer = setTimeout(() => controller.abort(), timeoutMs);
+                    const timer = setTimeout(() => controller.abort(), timeout);
                     const resp = await fetch(PROXY + encodeURIComponent(url), { signal: controller.signal });
                     clearTimeout(timer);
                     if (!resp.ok) {
-                        if (i < retries && (resp.status === 429 || resp.status >= 500)) {
-                            await delay(1000);
+                        if (i < maxRetries && (resp.status === 429 || resp.status >= 500)) {
+                            await delay(fetchOptions.retryDelay);
                             continue;
                         }
                         throw new Error(`HTTP ${resp.status}`);
                     }
                     return resp;
                 } catch (err) {
-                    if (i < retries && err.name !== 'AbortError') {
-                        await delay(1000);
+                    if (i < maxRetries && err.name !== 'AbortError') {
+                        await delay(fetchOptions.retryDelay);
                         continue;
                     }
                     throw err;
@@ -1028,35 +1032,62 @@
 
             let completed = 0;
 
+            // Use more resilient settings for bulk mode
+            fetchOptions = { retries: 2, timeoutMs: 12000, retryDelay: 1500 };
+
             for (let i = 0; i < urls.length; i++) {
                 const url = urls[i];
-                if (i > 0) await delay(1000);
+                if (i > 0) await delay(2000);
 
                 progressText.textContent = `${completed + 1} / ${urls.length} — ${url}`;
                 progressBar.style.width = `${((completed) / urls.length) * 100}%`;
 
                 try {
-                    const result = await detectWordPress(url);
+                    let result = await detectWordPress(url);
+
+                    // If most checks failed, it might be rate limiting — retry once after a longer pause
+                    const passedCount = Object.values(result.checks).filter(Boolean).length;
+                    const totalChecks = Object.keys(result.checks).length;
+                    if (passedCount <= 1 && totalChecks > 0) {
+                        await delay(3000);
+                        try {
+                            const retryResult = await detectWordPress(url);
+                            const retryPassed = Object.values(retryResult.checks).filter(Boolean).length;
+                            if (retryPassed > passedCount) result = retryResult;
+                        } catch { /* keep original result */ }
+                    }
+
                     bulkResultsData.push(result);
                     appendBulkResult(result, resultsEl);
                 } catch (err) {
-                    const errorResult = {
-                        url: url,
-                        isWordPress: false,
-                        confidence: 0,
-                        checks: {},
-                        version: null,
-                        theme: null,
-                        plugins: [],
-                        error: true
-                    };
-                    bulkResultsData.push(errorResult);
-                    appendBulkResult(errorResult, resultsEl);
+                    // If full scan failed, wait and retry once
+                    await delay(3000);
+                    try {
+                        const retryResult = await detectWordPress(url);
+                        bulkResultsData.push(retryResult);
+                        appendBulkResult(retryResult, resultsEl);
+                    } catch {
+                        const errorResult = {
+                            url: url,
+                            isWordPress: false,
+                            confidence: 0,
+                            checks: {},
+                            version: null,
+                            theme: null,
+                            plugins: [],
+                            error: true
+                        };
+                        bulkResultsData.push(errorResult);
+                        appendBulkResult(errorResult, resultsEl);
+                    }
                 }
 
                 completed++;
                 progressBar.style.width = `${(completed / urls.length) * 100}%`;
             }
+
+            // Reset to default settings
+            fetchOptions = { retries: 1, timeoutMs: 8000, retryDelay: 1000 };
 
             progressText.textContent = `Done — ${completed} / ${urls.length}`;
             btn.disabled = false;
