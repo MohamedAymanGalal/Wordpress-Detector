@@ -592,13 +592,12 @@
         async function detectWordPress(urlString) {
             const baseUrl = normalizeUrl(urlString);
             const checks = {};
-            let html = '';
             let version = null;
             let theme = null;
             let plugins = new Set();
 
-            // Fetch homepage
-            html = await fetchText(baseUrl.origin);
+            // Fetch homepage first (needed for HTML analysis)
+            const html = await fetchText(baseUrl.origin);
 
             // 1. Meta generator tag
             const generatorMatch = html.match(/<meta[^>]+name=["']generator["'][^>]+content=["']([^"']*wordpress[^"']*)["']/i)
@@ -608,16 +607,6 @@
                 const vMatch = generatorMatch[1].match(/wordpress\s*\.?\s*([\d.]+)/i);
                 if (vMatch) version = vMatch[1];
             }
-
-            // Version from RSS feed (very reliable)
-            if (!version) {
-                try {
-                    const feedText = await fetchText(baseUrl.origin + '/feed/');
-                    const feedMatch = feedText.match(/generator>https?:\/\/wordpress\.org\/\?v=([\d.]+)</i);
-                    if (feedMatch) version = feedMatch[1];
-                } catch { /* ignore */ }
-            }
-
 
             // 2. wp-content / wp-includes
             checks['wp-content/wp-includes Paths'] = /\/wp-content\//i.test(html) || /\/wp-includes\//i.test(html);
@@ -636,36 +625,37 @@
             const pluginMatches = html.matchAll(/\/wp-content\/plugins\/([a-z0-9_-]+)\//gi);
             for (const m of pluginMatches) plugins.add(m[1]);
 
-            // 6. wp-login.php
-            try {
-                const loginResp = await proxyFetch(baseUrl.origin + '/wp-login.php');
-                const loginHtml = await loginResp.text();
-                // Require multiple WP-specific elements to avoid false positives from 404 pages
-                checks['wp-login.php'] = /user_login/i.test(loginHtml) && /wp-submit/i.test(loginHtml);
-            } catch {
-                checks['wp-login.php'] = false;
+            // Run all endpoint checks in parallel
+            const [loginResult, apiResult, xmlrpcResult, feedResult] = await Promise.allSettled([
+                // 6. wp-login.php
+                proxyFetch(baseUrl.origin + '/wp-login.php')
+                    .then(r => r.text())
+                    .then(t => /user_login/i.test(t) && /wp-submit/i.test(t)),
+
+                // 7. REST API
+                fetchText(baseUrl.origin + '/wp-json/')
+                    .then(t => { const d = JSON.parse(t); return !!(d && (d.name || d.namespaces)); }),
+
+                // 8. XML-RPC
+                proxyFetch(baseUrl.origin + '/xmlrpc.php')
+                    .then(r => r.text())
+                    .then(t => /xml-rpc server accepts post requests only/i.test(t)),
+
+                // RSS feed for version
+                fetchText(baseUrl.origin + '/feed/')
+                    .then(t => { const m = t.match(/generator>https?:\/\/wordpress\.org\/\?v=([\d.]+)</i); return m ? m[1] : null; })
+            ]);
+
+            checks['wp-login.php'] = loginResult.status === 'fulfilled' && loginResult.value;
+            checks['REST API (/wp-json/)'] = apiResult.status === 'fulfilled' && apiResult.value;
+            checks['XML-RPC'] = xmlrpcResult.status === 'fulfilled' && xmlrpcResult.value;
+
+            // Version from RSS feed
+            if (!version && feedResult.status === 'fulfilled' && feedResult.value) {
+                version = feedResult.value;
             }
 
-            // 7. REST API
-            try {
-                const apiText = await fetchText(baseUrl.origin + '/wp-json/');
-                const apiData = JSON.parse(apiText);
-                checks['REST API (/wp-json/)'] = !!(apiData && (apiData.name || apiData.namespaces));
-            } catch {
-                checks['REST API (/wp-json/)'] = false;
-            }
-
-            // 8. XML-RPC
-            try {
-                const xmlrpcResp = await proxyFetch(baseUrl.origin + '/xmlrpc.php');
-                const xmlrpcText = await xmlrpcResp.text();
-                // Only match the exact WordPress XML-RPC response message
-                checks['XML-RPC'] = /xml-rpc server accepts post requests only/i.test(xmlrpcText);
-            } catch {
-                checks['XML-RPC'] = false;
-            }
-
-            // 9. readme.html for version
+            // readme.html fallback for version (only if still no version)
             if (!version) {
                 try {
                     const readmeText = await fetchText(baseUrl.origin + '/readme.html');
