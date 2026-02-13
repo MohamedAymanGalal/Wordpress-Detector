@@ -640,7 +640,8 @@
             try {
                 const loginResp = await proxyFetch(baseUrl.origin + '/wp-login.php');
                 const loginHtml = await loginResp.text();
-                checks['wp-login.php'] = /wp-login|user_login|wp-submit/i.test(loginHtml);
+                // Require multiple WP-specific elements to avoid false positives from 404 pages
+                checks['wp-login.php'] = /user_login/i.test(loginHtml) && /wp-submit/i.test(loginHtml);
             } catch {
                 checks['wp-login.php'] = false;
             }
@@ -658,8 +659,8 @@
             try {
                 const xmlrpcResp = await proxyFetch(baseUrl.origin + '/xmlrpc.php');
                 const xmlrpcText = await xmlrpcResp.text();
-                checks['XML-RPC'] = /xml-rpc server accepts post requests only/i.test(xmlrpcText)
-                    || /xmlrpc/i.test(xmlrpcText);
+                // Only match the exact WordPress XML-RPC response message
+                checks['XML-RPC'] = /xml-rpc server accepts post requests only/i.test(xmlrpcText);
             } catch {
                 checks['XML-RPC'] = false;
             }
@@ -678,7 +679,16 @@
 
             const passed = Object.values(checks).filter(Boolean).length;
             const total = Object.keys(checks).length;
-            const isWordPress = passed >= 2;
+            // Strong signals: content-based checks from the homepage HTML
+            const strongSignals = [
+                checks['Meta Generator Tag'],
+                checks['wp-content/wp-includes Paths'],
+                checks['WordPress Scripts (emoji/embed)'],
+                checks['Theme Detected'],
+                checks['REST API (/wp-json/)']
+            ].filter(Boolean).length;
+            // Require at least 1 strong signal, or 3+ total checks passed
+            const isWordPress = (strongSignals >= 1 && passed >= 2) || passed >= 3;
             const confidence = Math.round((passed / total) * 100);
 
             return {
