@@ -1032,59 +1032,58 @@
             bulkResultsData = [];
 
             let completed = 0;
+            const CONCURRENCY = 3; // Scan 3 URLs at a time
 
             // Use more resilient settings for bulk mode
-            fetchOptions = { retries: 3, timeoutMs: 30000, retryDelay: 2500 };
+            fetchOptions = { retries: 2, timeoutMs: 30000, retryDelay: 2000 };
 
-            for (let i = 0; i < urls.length; i++) {
-                const url = urls[i];
-                if (i > 0) await delay(2000);
+            // Process URLs in batches of CONCURRENCY
+            for (let i = 0; i < urls.length; i += CONCURRENCY) {
+                const batch = urls.slice(i, i + CONCURRENCY);
 
-                progressText.textContent = `${completed + 1} / ${urls.length} — ${url}`;
-                progressBar.style.width = `${((completed) / urls.length) * 100}%`;
+                progressText.textContent = `Scanning ${completed + 1}–${Math.min(completed + batch.length, urls.length)} / ${urls.length}`;
+                progressBar.style.width = `${(completed / urls.length) * 100}%`;
 
-                try {
-                    let result = await detectWordPress(url);
-
-                    // If most checks failed, it might be rate limiting — retry once after a longer pause
-                    const passedCount = Object.values(result.checks).filter(Boolean).length;
-                    const totalChecks = Object.keys(result.checks).length;
-                    if (passedCount <= 1 && totalChecks > 0) {
-                        await delay(3000);
+                const batchResults = await Promise.allSettled(
+                    batch.map(async (url) => {
                         try {
-                            const retryResult = await detectWordPress(url);
-                            const retryPassed = Object.values(retryResult.checks).filter(Boolean).length;
-                            if (retryPassed > passedCount) result = retryResult;
-                        } catch { /* keep original result */ }
-                    }
+                            const result = await detectWordPress(url);
+                            return result;
+                        } catch {
+                            return {
+                                url: url,
+                                isWordPress: false,
+                                confidence: 0,
+                                checks: {},
+                                version: null,
+                                theme: null,
+                                plugins: [],
+                                error: true
+                            };
+                        }
+                    })
+                );
 
+                for (const settled of batchResults) {
+                    const result = settled.status === 'fulfilled' ? settled.value : {
+                        url: '?',
+                        isWordPress: false,
+                        confidence: 0,
+                        checks: {},
+                        version: null,
+                        theme: null,
+                        plugins: [],
+                        error: true
+                    };
                     bulkResultsData.push(result);
                     appendBulkResult(result, resultsEl);
-                } catch (err) {
-                    // If full scan failed, wait and retry once
-                    await delay(3000);
-                    try {
-                        const retryResult = await detectWordPress(url);
-                        bulkResultsData.push(retryResult);
-                        appendBulkResult(retryResult, resultsEl);
-                    } catch {
-                        const errorResult = {
-                            url: url,
-                            isWordPress: false,
-                            confidence: 0,
-                            checks: {},
-                            version: null,
-                            theme: null,
-                            plugins: [],
-                            error: true
-                        };
-                        bulkResultsData.push(errorResult);
-                        appendBulkResult(errorResult, resultsEl);
-                    }
+                    completed++;
                 }
 
-                completed++;
                 progressBar.style.width = `${(completed / urls.length) * 100}%`;
+
+                // Small delay between batches to avoid overwhelming the proxy
+                if (i + CONCURRENCY < urls.length) await delay(1000);
             }
 
             // Reset to default settings
