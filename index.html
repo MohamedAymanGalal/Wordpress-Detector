@@ -641,7 +641,12 @@
     </div>
 
     <script>
-        const PROXY = 'https://api.allorigins.win/raw?url=';
+        const PROXIES = [
+            'https://api.allorigins.win/raw?url=',
+            'https://api.codetabs.com/v1/proxy?quest=',
+            'https://corsproxy.io/?url='
+        ];
+        let currentProxyIndex = 0;
 
         // --- Tab switching ---
         function switchTab(tab) {
@@ -765,28 +770,43 @@
         async function proxyFetch(url, retries, timeoutMs) {
             const maxRetries = retries !== undefined ? retries : fetchOptions.retries;
             const timeout = timeoutMs !== undefined ? timeoutMs : fetchOptions.timeoutMs;
-            for (let i = 0; i <= maxRetries; i++) {
-                try {
-                    const controller = new AbortController();
-                    const timer = setTimeout(() => controller.abort(), timeout);
-                    const resp = await fetch(PROXY + encodeURIComponent(url), { signal: controller.signal });
-                    clearTimeout(timer);
-                    if (!resp.ok) {
-                        if (i < maxRetries && (resp.status === 429 || resp.status >= 500)) {
+            let lastErr;
+
+            // Try each proxy before giving up
+            for (let p = 0; p < PROXIES.length; p++) {
+                const proxyUrl = PROXIES[(currentProxyIndex + p) % PROXIES.length];
+                for (let i = 0; i <= maxRetries; i++) {
+                    try {
+                        const controller = new AbortController();
+                        const timer = setTimeout(() => controller.abort(), timeout);
+                        const resp = await fetch(proxyUrl + encodeURIComponent(url), { signal: controller.signal });
+                        clearTimeout(timer);
+                        if (!resp.ok) {
+                            if (i < maxRetries && (resp.status === 429 || resp.status >= 500)) {
+                                await delay(fetchOptions.retryDelay);
+                                continue;
+                            }
+                            // If rate limited, try next proxy
+                            if (resp.status === 429) {
+                                lastErr = new Error(`HTTP ${resp.status}`);
+                                break;
+                            }
+                            throw new Error(`HTTP ${resp.status}`);
+                        }
+                        // This proxy worked — prefer it for future requests
+                        currentProxyIndex = (currentProxyIndex + p) % PROXIES.length;
+                        return resp;
+                    } catch (err) {
+                        lastErr = err;
+                        if (i < maxRetries && err.name !== 'AbortError') {
                             await delay(fetchOptions.retryDelay);
                             continue;
                         }
-                        throw new Error(`HTTP ${resp.status}`);
+                        break; // Try next proxy
                     }
-                    return resp;
-                } catch (err) {
-                    if (i < maxRetries && err.name !== 'AbortError') {
-                        await delay(fetchOptions.retryDelay);
-                        continue;
-                    }
-                    throw err;
                 }
             }
+            throw lastErr || new Error('All proxies failed');
         }
 
         async function fetchText(url) {
