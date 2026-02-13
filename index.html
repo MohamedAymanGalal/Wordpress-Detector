@@ -408,7 +408,12 @@
             padding: 12px 20px;
             background: #0f172a;
             border-radius: 10px;
+            cursor: pointer;
+            transition: outline 0.2s, transform 0.15s;
         }
+
+        .bulk-summary-item:hover { transform: scale(1.05); }
+        .bulk-summary-item.selected { outline: 2px solid #f8fafc; }
 
         .bulk-summary-count {
             font-size: 24px;
@@ -1104,15 +1109,15 @@
             const errCount = bulkResultsData.filter(r => r.error).length;
 
             document.getElementById('bulkSummary').innerHTML = `
-                <div class="bulk-summary-item wp">
+                <div class="bulk-summary-item wp" onclick="filterBulkResults('wp', this)">
                     <div class="bulk-summary-count">${wpCount}</div>
                     <div class="bulk-summary-label">WordPress</div>
                 </div>
-                <div class="bulk-summary-item not-wp">
+                <div class="bulk-summary-item not-wp" onclick="filterBulkResults('not-wp', this)">
                     <div class="bulk-summary-count">${notWpCount}</div>
                     <div class="bulk-summary-label">Not WordPress</div>
                 </div>
-                <div class="bulk-summary-item err">
+                <div class="bulk-summary-item err" onclick="filterBulkResults('error', this)">
                     <div class="bulk-summary-count">${errCount}</div>
                     <div class="bulk-summary-label">Errors</div>
                 </div>
@@ -1147,8 +1152,10 @@
                 detailsHtml += `</div>`;
             }
 
+            const resultType = result.error ? 'error' : (result.isWordPress ? 'wp' : 'not-wp');
+
             container.innerHTML += `
-                <div class="bulk-result-item">
+                <div class="bulk-result-item" data-type="${resultType}">
                     <span class="bulk-result-url" title="${result.url}">${result.url}</span>
                     <div class="bulk-result-info">
                         <span class="bulk-result-version">${versionText}</span>
@@ -1156,8 +1163,36 @@
                         ${!result.error ? `<button class="bulk-detail-toggle" onclick="toggleDetail('${id}')">Details</button>` : ''}
                     </div>
                 </div>
-                ${detailsHtml}
+                ${detailsHtml ? detailsHtml.replace('class="bulk-result-details"', `class="bulk-result-details" data-type="${resultType}"`) : ''}
             `;
+        }
+
+        let activeFilter = null;
+
+        function filterBulkResults(type, el) {
+            const items = document.querySelectorAll('#bulkResults .bulk-result-item');
+            const details = document.querySelectorAll('#bulkResults .bulk-result-details');
+            const summaryItems = document.querySelectorAll('.bulk-summary-item');
+
+            // Toggle off if clicking the same filter
+            if (activeFilter === type) {
+                activeFilter = null;
+                summaryItems.forEach(s => s.classList.remove('selected'));
+                items.forEach(item => item.style.display = '');
+                details.forEach(d => d.style.display = '');
+                return;
+            }
+
+            activeFilter = type;
+            summaryItems.forEach(s => s.classList.remove('selected'));
+            el.classList.add('selected');
+
+            items.forEach(item => {
+                item.style.display = item.dataset.type === type ? '' : 'none';
+            });
+            details.forEach(d => {
+                d.style.display = d.dataset.type === type ? '' : 'none';
+            });
         }
 
         function toggleDetail(id) {
