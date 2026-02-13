@@ -760,7 +760,7 @@
             return new URL(url);
         }
 
-        let fetchOptions = { retries: 2, timeoutMs: 10000, retryDelay: 1500 };
+        let fetchOptions = { retries: 2, timeoutMs: 30000, retryDelay: 2000 };
 
         async function proxyFetch(url, retries, timeoutMs) {
             const maxRetries = retries !== undefined ? retries : fetchOptions.retries;
@@ -1034,7 +1034,7 @@
             let completed = 0;
 
             // Use more resilient settings for bulk mode
-            fetchOptions = { retries: 3, timeoutMs: 15000, retryDelay: 2000 };
+            fetchOptions = { retries: 3, timeoutMs: 30000, retryDelay: 2500 };
 
             for (let i = 0; i < urls.length; i++) {
                 const url = urls[i];
@@ -1088,7 +1088,7 @@
             }
 
             // Reset to default settings
-            fetchOptions = { retries: 2, timeoutMs: 10000, retryDelay: 1500 };
+            fetchOptions = { retries: 2, timeoutMs: 30000, retryDelay: 2000 };
 
             progressText.textContent = `Done — ${completed} / ${urls.length}`;
             btn.disabled = false;
