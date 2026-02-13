@@ -84,6 +84,12 @@
             display: flex;
             gap: 10px;
             margin-bottom: 24px;
+            flex-wrap: wrap;
+        }
+
+        @media (max-width: 500px) {
+            .input-group input[type="text"] { width: 100%; }
+            .input-group button { width: 100%; }
         }
 
         input[type="text"] {
