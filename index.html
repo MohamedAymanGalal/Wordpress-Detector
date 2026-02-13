@@ -710,15 +710,23 @@
             loading.classList.add('active');
             results.classList.remove('active');
             errorMsg.classList.remove('active');
-            setLoading('Scanning...');
+
+            const startTime = Date.now();
+            let timerInterval = setInterval(() => {
+                const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+                setLoading(`Scanning... ${elapsed}s`);
+            }, 100);
 
             try {
                 const result = await detectWordPress(input);
-                displayResults(result.isWordPress, result.confidence, result.checks, result.version, result.theme, result.plugins);
+                const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+                result.scanTime = elapsed;
+                displayResults(result.isWordPress, result.confidence, result.checks, result.version, result.theme, result.plugins, elapsed);
             } catch (err) {
                 showError('errorMsg', 'Could not fetch the website. Make sure the URL is correct and the site is accessible.');
             }
 
+            clearInterval(timerInterval);
             btn.disabled = false;
             loading.classList.remove('active');
         }
@@ -729,7 +737,7 @@
             el.classList.add('active');
         }
 
-        function displayResults(isWordPress, confidence, checks, version, theme, plugins) {
+        function displayResults(isWordPress, confidence, checks, version, theme, plugins, scanTime) {
             const results = document.getElementById('results');
             const verdict = document.getElementById('verdict');
             const verdictText = document.getElementById('verdictText');
@@ -737,7 +745,7 @@
 
             verdict.className = 'verdict ' + (isWordPress ? 'is-wp' : 'not-wp');
             verdictText.textContent = isWordPress ? 'WordPress Detected' : 'Not WordPress';
-            confidenceText.textContent = `Confidence: ${confidence}% (${Object.values(checks).filter(Boolean).length}/${Object.keys(checks).length} checks passed)`;
+            confidenceText.textContent = `Confidence: ${confidence}% (${Object.values(checks).filter(Boolean).length}/${Object.keys(checks).length} checks passed)${scanTime ? ' \u00B7 ' + scanTime + 's' : ''}`;
 
             const infoSection = document.getElementById('infoSection');
             const infoRows = document.getElementById('infoRows');
