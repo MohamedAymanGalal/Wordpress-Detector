@@ -732,6 +732,47 @@
             transform: translateX(-50%) translateY(0);
             opacity: 1;
         }
+
+        /* URL validation warning */
+        .url-warning {
+            display: none;
+            font-size: 12px;
+            color: #eab308;
+            margin-top: -18px;
+            margin-bottom: 12px;
+            padding: 0 4px;
+        }
+        .url-warning.active { display: block; }
+
+        /* Live checks animation */
+        .check-item.pending .check-icon {
+            background: rgba(148, 163, 184, 0.15);
+            color: var(--text-dim);
+        }
+        .check-item.pending span:last-child { color: var(--text-dim); }
+
+        @keyframes checkPop {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.3); }
+            100% { transform: scale(1); }
+        }
+        .check-item.just-resolved .check-icon {
+            animation: checkPop 0.3s ease;
+        }
+
+        /* Share button */
+        .share-btn {
+            display: none;
+            margin: 12px auto 0;
+            background: var(--btn-secondary-bg);
+            color: var(--text);
+            font-size: 13px;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+        .share-btn:hover { background: var(--btn-secondary-hover); }
+        .share-btn.active { display: block; }
     </style>
 </head>
 <body>
@@ -754,9 +795,10 @@
             <!-- Single URL Tab -->
             <div class="tab-content active" id="tab-single">
                 <div class="input-group">
-                    <input type="text" id="urlInput" placeholder="e.g. example.com" />
+                    <input type="text" id="urlInput" placeholder="e.g. example.com" oninput="validateUrlInput()" />
                     <button id="scanBtn" onclick="scan()">Scan</button>
                 </div>
+                <div class="url-warning" id="urlWarning"></div>
 
                 <div class="error-msg" id="errorMsg"></div>
 
@@ -791,6 +833,8 @@
                         <div class="details-title">Detection Checks</div>
                         <div id="checksList"></div>
                     </div>
+
+                    <button class="share-btn" id="shareBtn" onclick="shareResults()">Share Results</button>
                 </div>
             </div>
 
@@ -1174,6 +1218,133 @@
             };
         }
 
+        // --- Live detection (single scan with real-time check updates) ---
+        async function detectWordPressLive(urlString) {
+            const baseUrl = normalizeUrl(urlString);
+            const checks = {};
+            let version = null;
+            let theme = null;
+            let plugins = new Set();
+
+            const domain = baseUrl.hostname;
+            const sslPromise = checkSSL(domain);
+
+            const html = await fetchText(baseUrl.origin);
+
+            // HTML-based checks — resolve immediately
+            const generatorMatch = html.match(/<meta[^>]+name=["']generator["'][^>]+content=["']([^"']*wordpress[^"']*)["']/i)
+                || html.match(/<meta[^>]+content=["']([^"']*wordpress[^"']*)["'][^>]+name=["']generator["']/i);
+            checks['Meta Generator Tag'] = !!generatorMatch;
+            updateLiveCheck('Meta Generator Tag', checks['Meta Generator Tag']);
+            if (generatorMatch) {
+                const vMatch = generatorMatch[1].match(/wordpress\s*\.?\s*([\d.]+)/i);
+                if (vMatch) version = vMatch[1];
+            }
+
+            checks['wp-content/wp-includes Paths'] = /\/wp-content\//i.test(html) || /\/wp-includes\//i.test(html);
+            updateLiveCheck('wp-content/wp-includes Paths', checks['wp-content/wp-includes Paths']);
+
+            checks['WordPress Scripts (emoji/embed)'] = /wp-emoji-release/i.test(html) || /wp-embed\.min\.js/i.test(html);
+            updateLiveCheck('WordPress Scripts (emoji/embed)', checks['WordPress Scripts (emoji/embed)']);
+
+            const themeMatches = html.matchAll(/\/wp-content\/themes\/([a-z0-9_-]+)\//gi);
+            const themes = new Set();
+            for (const m of themeMatches) themes.add(m[1]);
+            if (themes.size > 0) theme = [...themes][0];
+            checks['Theme Detected'] = themes.size > 0;
+            updateLiveCheck('Theme Detected', checks['Theme Detected']);
+
+            const pluginMatches = html.matchAll(/\/wp-content\/plugins\/([a-z0-9_-]+)\//gi);
+            for (const m of pluginMatches) plugins.add(m[1]);
+            checks['Plugins Detected'] = plugins.size > 0;
+            updateLiveCheck('Plugins Detected', checks['Plugins Detected']);
+
+            // Endpoint checks — resolve as they complete
+            const endpointChecks = [
+                { name: 'wp-login.php', promise: proxyFetch(baseUrl.origin + '/wp-login.php').then(r => r.text()).then(t => /user_login/i.test(t) && /wp-submit/i.test(t)) },
+                { name: 'REST API (/wp-json/)', promise: fetchText(baseUrl.origin + '/wp-json/').then(t => { const d = JSON.parse(t); return !!(d && (d.name || d.namespaces)); }) },
+                { name: 'XML-RPC', promise: proxyFetch(baseUrl.origin + '/xmlrpc.php').then(r => r.text()).then(t => /xml-rpc server accepts post requests only/i.test(t)) }
+            ];
+
+            // Feed & readme for version only (not shown as live checks)
+            const feedPromise = fetchText(baseUrl.origin + '/feed/').then(t => { const m = t.match(/generator>https?:\/\/wordpress\.org\/\?v=([\d.]+)</i); return m ? m[1] : null; }).catch(() => null);
+            const readmePromise = fetchText(baseUrl.origin + '/readme.html').then(t => { const m = t.match(/wordpress[^<]*?version\s*([\d.]+)/i) || t.match(/<br\s*\/?\s*>\s*version\s*([\d.]+)/i); return m ? m[1] : null; }).catch(() => null);
+
+            // Fire endpoint checks and update live as each resolves
+            await Promise.allSettled(endpointChecks.map(async (ec) => {
+                try {
+                    const val = await ec.promise;
+                    checks[ec.name] = !!val;
+                } catch {
+                    checks[ec.name] = false;
+                }
+                updateLiveCheck(ec.name, checks[ec.name]);
+            }));
+
+            if (!version) { const fv = await feedPromise; if (fv) version = fv; }
+            if (!version) { const rv = await readmePromise; if (rv) version = rv; }
+
+            const passed = Object.values(checks).filter(Boolean).length;
+            const total = Object.keys(checks).length;
+            const strongSignals = [
+                checks['Meta Generator Tag'],
+                checks['wp-content/wp-includes Paths'],
+                checks['WordPress Scripts (emoji/embed)'],
+                checks['Theme Detected'],
+                checks['REST API (/wp-json/)']
+            ].filter(Boolean).length;
+            const isWordPress = (strongSignals >= 1 && passed >= 2) || passed >= 3;
+            const confidence = Math.round((passed / total) * 100);
+
+            const ssl = await sslPromise;
+
+            return { url: baseUrl.origin, isWordPress, confidence, checks, version, theme, plugins: [...plugins], ssl };
+        }
+
+        // --- Share results ---
+        let lastScanResult = null;
+
+        function shareResults() {
+            if (!lastScanResult) return;
+            const r = lastScanResult;
+            const status = r.isWordPress ? 'WordPress Detected' : 'Not WordPress';
+            const lines = [`${r.url} - ${status}`];
+            if (r.version) lines.push(`Version: ${r.version}`);
+            if (r.theme) lines.push(`Theme: ${r.theme}`);
+            if (r.plugins && r.plugins.length > 0) lines.push(`Plugins: ${r.plugins.join(', ')}`);
+            if (r.ssl) {
+                const sslStatus = r.ssl.valid ? 'Valid' : 'Expired';
+                lines.push(`SSL: ${sslStatus} (${r.ssl.issuer}${r.ssl.validTill ? ', expires ' + r.ssl.validTill : ''})`);
+            }
+            lines.push(`Confidence: ${r.confidence}%`);
+            lines.push('');
+            lines.push('Scanned with WordPress Detector');
+
+            const text = lines.join('\n');
+
+            if (navigator.share) {
+                navigator.share({ title: 'WordPress Scan Result', text }).catch(() => {
+                    copyToClipboard(text);
+                });
+            } else {
+                copyToClipboard(text);
+            }
+        }
+
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                showToast('Results copied to clipboard');
+            }).catch(() => {
+                const ta = document.createElement('textarea');
+                ta.value = text;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+                showToast('Results copied to clipboard');
+            });
+        }
+
         // --- Scan history ---
         function saveToHistory(result) {
             if (result.error) return; // Don't save errors to history
@@ -1230,6 +1401,7 @@
 
             // Show saved results directly without re-scanning
             if (item.checks && Object.keys(item.checks).length > 0) {
+                lastScanResult = item;
                 displayResults(item.isWordPress, item.confidence, item.checks, item.version, item.theme, item.plugins || [], null, item.ssl || null);
             } else {
                 // Old history entry without checks — re-scan
@@ -1243,24 +1415,111 @@
             showToast('History cleared');
         }
 
+        // --- URL validation ---
+        function validateUrlInput() {
+            const input = document.getElementById('urlInput').value.trim();
+            const warning = document.getElementById('urlWarning');
+            if (!input) { warning.classList.remove('active'); return; }
+
+            let msg = '';
+            if (/\s/.test(input)) {
+                msg = 'URL contains spaces — this is likely invalid.';
+            } else if (!/\./.test(input.replace(/^https?:\/\//, ''))) {
+                msg = 'URL is missing a domain extension (e.g. .com, .org).';
+            } else if (/[^a-z0-9.:\/\-_~?#\[\]@!$&'()*+,;=%]/i.test(input)) {
+                msg = 'URL contains unusual characters — double-check it.';
+            }
+
+            if (msg) {
+                warning.textContent = msg;
+                warning.classList.add('active');
+            } else {
+                warning.classList.remove('active');
+            }
+        }
+
         // --- Single scan ---
         function setLoading(text) {
             document.getElementById('loadingText').textContent = text;
+        }
+
+        // All check names used by detectWordPress, in order
+        const ALL_CHECK_NAMES = [
+            'Meta Generator Tag',
+            'wp-content/wp-includes Paths',
+            'WordPress Scripts (emoji/embed)',
+            'Theme Detected',
+            'Plugins Detected',
+            'wp-login.php',
+            'REST API (/wp-json/)',
+            'XML-RPC'
+        ];
+
+        function showLiveChecks() {
+            const results = document.getElementById('results');
+            const checksList = document.getElementById('checksList');
+            const verdict = document.getElementById('verdict');
+            const verdictText = document.getElementById('verdictText');
+            const confidenceText = document.getElementById('confidenceText');
+
+            // Reset sections
+            document.getElementById('infoSection').style.display = 'none';
+            document.getElementById('sslSection').style.display = 'none';
+            document.getElementById('pluginsSection').style.display = 'none';
+            document.getElementById('shareBtn').classList.remove('active');
+
+            verdict.className = 'verdict';
+            verdictText.textContent = 'Scanning...';
+            verdictText.style.color = 'var(--text-muted)';
+            confidenceText.textContent = '';
+
+            checksList.innerHTML = ALL_CHECK_NAMES.map(name =>
+                `<div class="check-item pending" data-check="${name}">
+                    <span class="check-icon">\u2022</span>
+                    <span>${name}</span>
+                </div>`
+            ).join('');
+
+            results.classList.add('active');
+        }
+
+        function updateLiveCheck(name, passed) {
+            const item = document.querySelector(`.check-item[data-check="${name}"]`);
+            if (!item) return;
+            item.classList.remove('pending');
+            item.classList.add('just-resolved');
+            const icon = item.querySelector('.check-icon');
+            icon.className = `check-icon ${passed ? 'pass' : 'fail'}`;
+            icon.textContent = passed ? '\u2713' : '\u2717';
+            setTimeout(() => item.classList.remove('just-resolved'), 300);
         }
 
         async function scan() {
             const input = document.getElementById('urlInput').value;
             if (!input.trim()) return;
 
+            // Validate first
+            const trimmed = input.trim();
+            if (/\s/.test(trimmed)) {
+                showError('errorMsg', 'URL contains spaces. Please enter a valid URL.');
+                return;
+            }
+            try { normalizeUrl(trimmed); } catch {
+                showError('errorMsg', 'Invalid URL format. Please enter a valid website address.');
+                return;
+            }
+
             const btn = document.getElementById('scanBtn');
             const loading = document.getElementById('loading');
-            const results = document.getElementById('results');
             const errorMsg = document.getElementById('errorMsg');
 
             btn.disabled = true;
             loading.classList.add('active');
-            results.classList.remove('active');
             errorMsg.classList.remove('active');
+            document.getElementById('urlWarning').classList.remove('active');
+
+            // Show live checks immediately
+            showLiveChecks();
 
             const startTime = Date.now();
             let timerInterval = setInterval(() => {
@@ -1269,12 +1528,14 @@
             }, 100);
 
             try {
-                const result = await detectWordPress(input);
+                const result = await detectWordPressLive(trimmed);
                 const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
                 result.scanTime = elapsed;
                 saveToHistory(result);
+                lastScanResult = result;
                 displayResults(result.isWordPress, result.confidence, result.checks, result.version, result.theme, result.plugins, elapsed, result.ssl);
             } catch (err) {
+                document.getElementById('results').classList.remove('active');
                 showError('errorMsg', 'Could not fetch the website. Make sure the URL is correct and the site is accessible.');
             }
 
@@ -1357,6 +1618,8 @@
                     </div>`;
             }
 
+            document.getElementById('shareBtn').classList.add('active');
+            verdictText.style.color = '';
             results.classList.add('active');
         }
 
