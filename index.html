@@ -773,6 +773,52 @@
         }
         .share-btn:hover { background: var(--btn-secondary-hover); }
         .share-btn.active { display: block; }
+
+        /* Security Score */
+        .security-score-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+        }
+        .security-gauge {
+            position: relative;
+            width: 56px;
+            height: 56px;
+            flex-shrink: 0;
+        }
+        .security-gauge svg { transform: rotate(-90deg); }
+        .security-gauge-bg { fill: none; stroke: var(--border); stroke-width: 5; }
+        .security-gauge-fill { fill: none; stroke-width: 5; stroke-linecap: round; transition: stroke-dashoffset 0.6s ease, stroke 0.3s; }
+        .security-gauge-text {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 15px;
+            font-weight: 700;
+        }
+        .security-finding {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 5px 0;
+            font-size: 13px;
+        }
+        .security-finding .sf-icon {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            flex-shrink: 0;
+        }
+        .sf-icon.good { background: rgba(34, 197, 94, 0.15); color: #22c55e; }
+        .sf-icon.warn { background: rgba(234, 179, 8, 0.15); color: #eab308; }
+        .sf-icon.bad { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
     </style>
 </head>
 <body>
@@ -822,6 +868,14 @@
                     <div id="sslSection" class="details-section" style="display:none">
                         <div class="details-title">SSL Certificate</div>
                         <div id="sslRows"></div>
+                    </div>
+
+                    <div id="securitySection" class="details-section" style="display:none">
+                        <div class="security-score-header">
+                            <div class="details-title" style="border:none;margin:0;padding:0">Security Score</div>
+                            <div class="security-gauge" id="securityGauge"></div>
+                        </div>
+                        <div id="securityFindings"></div>
                     </div>
 
                     <div id="pluginsSection" class="details-section" style="display:none">
@@ -1115,6 +1169,77 @@
             }
         }
 
+        // --- Security score calculation ---
+        function buildSecurityData({ ssl, version, versionExposed, xmlrpcOpen, loginExposed, readmeExposed, directoryListing, feedExposesVersion }) {
+            const findings = [];
+
+            // SSL checks (25 pts total)
+            if (ssl) {
+                if (ssl.valid) {
+                    findings.push({ category: 'ssl', label: 'SSL Certificate Valid', detail: `Issued by ${ssl.issuer}`, level: 'good', points: 15, maxPoints: 15 });
+                    if (ssl.daysLeft != null && ssl.daysLeft > 30) {
+                        findings.push({ category: 'ssl', label: 'SSL Not Expiring Soon', detail: `${ssl.daysLeft} days remaining until ${ssl.validTill}`, level: 'good', points: 5, maxPoints: 5 });
+                    } else if (ssl.daysLeft != null) {
+                        findings.push({ category: 'ssl', label: 'SSL Expiring Soon', detail: `Only ${ssl.daysLeft} days left — renew before ${ssl.validTill}`, level: 'warn', points: 2, maxPoints: 5 });
+                    }
+                } else {
+                    findings.push({ category: 'ssl', label: 'SSL Certificate Invalid', detail: 'Certificate is expired or not trusted — visitors will see browser warnings', level: 'bad', points: 0, maxPoints: 15 });
+                    findings.push({ category: 'ssl', label: 'SSL Expired', detail: 'Renew immediately to restore secure connections', level: 'bad', points: 0, maxPoints: 5 });
+                }
+                if (ssl.hsts) {
+                    findings.push({ category: 'ssl', label: 'HSTS Enabled', detail: 'Browser forced to use HTTPS — prevents downgrade attacks', level: 'good', points: 5, maxPoints: 5 });
+                } else {
+                    findings.push({ category: 'ssl', label: 'HSTS Not Enabled', detail: 'Add Strict-Transport-Security header to force HTTPS connections', level: 'warn', points: 0, maxPoints: 5 });
+                }
+            } else {
+                findings.push({ category: 'ssl', label: 'SSL Check Failed', detail: 'Could not verify SSL certificate status', level: 'warn', points: 0, maxPoints: 25 });
+            }
+
+            // Version exposure (20 pts)
+            if (versionExposed) {
+                const sources = [];
+                if (feedExposesVersion) sources.push('RSS feed');
+                if (readmeExposed) sources.push('readme.html');
+                findings.push({ category: 'wp', label: 'WordPress Version Exposed', detail: `Version ${version} is visible via ${sources.length ? sources.join(' and ') : 'page source'} — attackers can target known vulnerabilities`, level: 'bad', points: 0, maxPoints: 20 });
+            } else {
+                findings.push({ category: 'wp', label: 'WordPress Version Hidden', detail: 'Version number is not publicly exposed — reduces targeted attack surface', level: 'good', points: 20, maxPoints: 20 });
+            }
+
+            // XML-RPC (20 pts)
+            if (xmlrpcOpen) {
+                findings.push({ category: 'wp', label: 'XML-RPC Enabled', detail: 'xmlrpc.php is accessible — commonly used for brute-force and DDoS amplification attacks. Disable if not needed.', level: 'bad', points: 0, maxPoints: 20 });
+            } else {
+                findings.push({ category: 'wp', label: 'XML-RPC Disabled', detail: 'xmlrpc.php is not accessible — blocks a common attack vector', level: 'good', points: 20, maxPoints: 20 });
+            }
+
+            // Login page (10 pts)
+            if (loginExposed) {
+                findings.push({ category: 'wp', label: 'Login Page Exposed', detail: 'wp-login.php is publicly accessible — consider hiding or protecting it with rate limiting / 2FA', level: 'warn', points: 0, maxPoints: 10 });
+            } else {
+                findings.push({ category: 'wp', label: 'Login Page Hidden', detail: 'wp-login.php is not directly accessible — reduces brute-force attack surface', level: 'good', points: 10, maxPoints: 10 });
+            }
+
+            // readme.html (10 pts)
+            if (readmeExposed) {
+                findings.push({ category: 'wp', label: 'readme.html Exposed', detail: 'WordPress readme.html is publicly accessible and may reveal version information', level: 'warn', points: 0, maxPoints: 10 });
+            } else {
+                findings.push({ category: 'wp', label: 'readme.html Hidden', detail: 'WordPress readme.html is not publicly accessible', level: 'good', points: 10, maxPoints: 10 });
+            }
+
+            // Directory listing (15 pts)
+            if (directoryListing) {
+                findings.push({ category: 'wp', label: 'Directory Listing Enabled', detail: 'wp-content/ shows file listing — exposes internal structure, plugin/theme files to attackers', level: 'bad', points: 0, maxPoints: 15 });
+            } else {
+                findings.push({ category: 'wp', label: 'Directory Listing Disabled', detail: 'Server does not expose directory contents — internal file structure is hidden', level: 'good', points: 15, maxPoints: 15 });
+            }
+
+            const totalMax = findings.reduce((s, f) => s + f.maxPoints, 0);
+            const totalPts = findings.reduce((s, f) => s + f.points, 0);
+            const score = totalMax > 0 ? Math.round((totalPts / totalMax) * 100) : null;
+
+            return { score, findings, isWordPress: false };
+        }
+
         // --- Core detection logic (shared by single & bulk) ---
         async function detectWordPress(urlString) {
             const baseUrl = normalizeUrl(urlString);
@@ -1155,8 +1280,8 @@
             const pluginMatches = html.matchAll(/\/wp-content\/plugins\/([a-z0-9_-]+)\//gi);
             for (const m of pluginMatches) plugins.add(m[1]);
 
-            // Run all endpoint checks in parallel
-            const [loginResult, apiResult, xmlrpcResult, feedResult, readmeResult] = await Promise.allSettled([
+            // Run all endpoint checks in parallel (including security-relevant ones)
+            const [loginResult, apiResult, xmlrpcResult, feedResult, readmeResult, dirListResult] = await Promise.allSettled([
                 proxyFetch(baseUrl.origin + '/wp-login.php')
                     .then(r => r.text())
                     .then(t => /user_login/i.test(t) && /wp-submit/i.test(t)),
@@ -1175,21 +1300,35 @@
                     .then(t => {
                         const m = t.match(/wordpress[^<]*?version\s*([\d.]+)/i) || t.match(/<br\s*\/?\s*>\s*version\s*([\d.]+)/i);
                         return m ? m[1] : null;
-                    })
+                    }),
+
+                fetchText(baseUrl.origin + '/wp-content/')
+                    .then(t => /index of/i.test(t) || /<title>[^<]*directory/i.test(t))
             ]);
 
             checks['wp-login.php'] = loginResult.status === 'fulfilled' && loginResult.value;
             checks['REST API (/wp-json/)'] = apiResult.status === 'fulfilled' && apiResult.value;
             checks['XML-RPC'] = xmlrpcResult.status === 'fulfilled' && xmlrpcResult.value;
 
-            if (!version && feedResult.status === 'fulfilled' && feedResult.value) {
-                version = feedResult.value;
-            }
-            if (!version && readmeResult.status === 'fulfilled' && readmeResult.value) {
-                version = readmeResult.value;
-            }
+            const feedExposesVersion = feedResult.status === 'fulfilled' && feedResult.value;
+            const readmeExposed = readmeResult.status === 'fulfilled' && readmeResult.value;
+            const directoryListing = dirListResult.status === 'fulfilled' && dirListResult.value;
+
+            if (!version && feedExposesVersion) version = feedResult.value;
+            if (!version && readmeExposed) version = readmeResult.value;
 
             checks['Plugins Detected'] = plugins.size > 0;
+
+            // Build security data
+            const security = buildSecurityData({
+                ssl, isWordPress: null, // computed below
+                version, versionExposed: !!version,
+                xmlrpcOpen: checks['XML-RPC'],
+                loginExposed: checks['wp-login.php'],
+                readmeExposed: !!readmeExposed,
+                directoryListing: !!directoryListing,
+                feedExposesVersion: !!feedExposesVersion
+            });
 
             const passed = Object.values(checks).filter(Boolean).length;
             const total = Object.keys(checks).length;
@@ -1206,6 +1345,14 @@
             // Await SSL result
             const ssl = await sslPromise;
 
+            // Update security with final isWordPress
+            security.isWordPress = isWordPress;
+            if (!isWordPress) {
+                // For non-WP sites, only show SSL-related findings
+                security.findings = security.findings.filter(f => f.category === 'ssl');
+                security.score = security.findings.length > 0 ? Math.round(security.findings.reduce((s, f) => s + f.points, 0) / security.findings.reduce((s, f) => s + f.maxPoints, 0) * 100) : null;
+            }
+
             return {
                 url: baseUrl.origin,
                 isWordPress,
@@ -1214,7 +1361,8 @@
                 version,
                 theme,
                 plugins: [...plugins],
-                ssl
+                ssl,
+                security
             };
         }
 
@@ -1266,9 +1414,10 @@
                 { name: 'XML-RPC', promise: proxyFetch(baseUrl.origin + '/xmlrpc.php').then(r => r.text()).then(t => /xml-rpc server accepts post requests only/i.test(t)) }
             ];
 
-            // Feed & readme for version only (not shown as live checks)
+            // Feed & readme for version, directory listing for security
             const feedPromise = fetchText(baseUrl.origin + '/feed/').then(t => { const m = t.match(/generator>https?:\/\/wordpress\.org\/\?v=([\d.]+)</i); return m ? m[1] : null; }).catch(() => null);
             const readmePromise = fetchText(baseUrl.origin + '/readme.html').then(t => { const m = t.match(/wordpress[^<]*?version\s*([\d.]+)/i) || t.match(/<br\s*\/?\s*>\s*version\s*([\d.]+)/i); return m ? m[1] : null; }).catch(() => null);
+            const dirListPromise = fetchText(baseUrl.origin + '/wp-content/').then(t => /index of/i.test(t) || /<title>[^<]*directory/i.test(t)).catch(() => false);
 
             // Fire endpoint checks and update live as each resolves
             await Promise.allSettled(endpointChecks.map(async (ec) => {
@@ -1281,8 +1430,12 @@
                 updateLiveCheck(ec.name, checks[ec.name]);
             }));
 
-            if (!version) { const fv = await feedPromise; if (fv) version = fv; }
-            if (!version) { const rv = await readmePromise; if (rv) version = rv; }
+            const feedExposesVersion = await feedPromise;
+            const readmeExposed = await readmePromise;
+            const directoryListing = await dirListPromise;
+
+            if (!version && feedExposesVersion) version = feedExposesVersion;
+            if (!version && readmeExposed) version = readmeExposed;
 
             const passed = Object.values(checks).filter(Boolean).length;
             const total = Object.keys(checks).length;
@@ -1298,7 +1451,21 @@
 
             const ssl = await sslPromise;
 
-            return { url: baseUrl.origin, isWordPress, confidence, checks, version, theme, plugins: [...plugins], ssl };
+            const security = buildSecurityData({
+                ssl, version, versionExposed: !!version,
+                xmlrpcOpen: checks['XML-RPC'],
+                loginExposed: checks['wp-login.php'],
+                readmeExposed: !!readmeExposed,
+                directoryListing: !!directoryListing,
+                feedExposesVersion: !!feedExposesVersion
+            });
+            security.isWordPress = isWordPress;
+            if (!isWordPress) {
+                security.findings = security.findings.filter(f => f.category === 'ssl');
+                security.score = security.findings.length > 0 ? Math.round(security.findings.reduce((s, f) => s + f.points, 0) / security.findings.reduce((s, f) => s + f.maxPoints, 0) * 100) : null;
+            }
+
+            return { url: baseUrl.origin, isWordPress, confidence, checks, version, theme, plugins: [...plugins], ssl, security };
         }
 
         // --- Share results ---
@@ -1315,6 +1482,9 @@
             if (r.ssl) {
                 const sslStatus = r.ssl.valid ? 'Valid' : 'Expired';
                 lines.push(`SSL: ${sslStatus} (${r.ssl.issuer}${r.ssl.validTill ? ', expires ' + r.ssl.validTill : ''})`);
+            }
+            if (r.security && r.security.score != null) {
+                lines.push(`Security Score: ${r.security.score}/100`);
             }
             lines.push(`Confidence: ${r.confidence}%`);
             lines.push('');
@@ -1358,6 +1528,7 @@
                 plugins: result.plugins || [],
                 checks: result.checks || {},
                 ssl: result.ssl || null,
+                security: result.security || null,
                 timestamp: Date.now()
             });
             // Keep last 50 entries
@@ -1402,7 +1573,7 @@
             // Show saved results directly without re-scanning
             if (item.checks && Object.keys(item.checks).length > 0) {
                 lastScanResult = item;
-                displayResults(item.isWordPress, item.confidence, item.checks, item.version, item.theme, item.plugins || [], null, item.ssl || null);
+                displayResults(item.isWordPress, item.confidence, item.checks, item.version, item.theme, item.plugins || [], null, item.ssl || null, item.security || null);
             } else {
                 // Old history entry without checks — re-scan
                 scan();
@@ -1466,6 +1637,7 @@
             document.getElementById('infoSection').style.display = 'none';
             document.getElementById('sslSection').style.display = 'none';
             document.getElementById('pluginsSection').style.display = 'none';
+            document.getElementById('securitySection').style.display = 'none';
             document.getElementById('shareBtn').classList.remove('active');
 
             verdict.className = 'verdict';
@@ -1533,7 +1705,7 @@
                 result.scanTime = elapsed;
                 saveToHistory(result);
                 lastScanResult = result;
-                displayResults(result.isWordPress, result.confidence, result.checks, result.version, result.theme, result.plugins, elapsed, result.ssl);
+                displayResults(result.isWordPress, result.confidence, result.checks, result.version, result.theme, result.plugins, elapsed, result.ssl, result.security);
             } catch (err) {
                 document.getElementById('results').classList.remove('active');
                 showError('errorMsg', 'Could not fetch the website. Make sure the URL is correct and the site is accessible.');
@@ -1550,7 +1722,7 @@
             el.classList.add('active');
         }
 
-        function displayResults(isWordPress, confidence, checks, version, theme, plugins, scanTime, ssl) {
+        function displayResults(isWordPress, confidence, checks, version, theme, plugins, scanTime, ssl, security) {
             const results = document.getElementById('results');
             const verdict = document.getElementById('verdict');
             const verdictText = document.getElementById('verdictText');
@@ -1606,6 +1778,36 @@
                 `;
             } else {
                 sslSection.style.display = 'none';
+            }
+
+            // Security score section
+            const securitySection = document.getElementById('securitySection');
+            const securityFindings = document.getElementById('securityFindings');
+            const securityGauge = document.getElementById('securityGauge');
+            if (security && security.score != null && security.findings.length > 0) {
+                securitySection.style.display = 'block';
+                const score = security.score;
+                const color = score >= 70 ? '#22c55e' : score >= 40 ? '#eab308' : '#ef4444';
+                const circumference = 2 * Math.PI * 22;
+                const offset = circumference - (score / 100) * circumference;
+                securityGauge.innerHTML = `
+                    <svg width="56" height="56" viewBox="0 0 56 56">
+                        <circle class="security-gauge-bg" cx="28" cy="28" r="22"/>
+                        <circle class="security-gauge-fill" cx="28" cy="28" r="22" stroke="${color}" stroke-dasharray="${circumference}" stroke-dashoffset="${offset}"/>
+                    </svg>
+                    <div class="security-gauge-text" style="color:${color}">${score}</div>
+                `;
+                securityFindings.innerHTML = security.findings.map(f => `
+                    <div class="security-finding">
+                        <span class="sf-icon ${f.level}">${f.level === 'good' ? '\u2713' : f.level === 'warn' ? '!' : '\u2717'}</span>
+                        <div>
+                            <div style="font-weight:500;color:var(--text-bright)">${f.label}</div>
+                            <div style="font-size:12px;color:var(--text-muted);margin-top:1px">${f.detail}</div>
+                        </div>
+                    </div>
+                `).join('');
+            } else {
+                securitySection.style.display = 'none';
             }
 
             const checksList = document.getElementById('checksList');
@@ -1843,6 +2045,11 @@
                     detailsHtml += `<div class="bulk-detail-row"><span>SSL Issuer</span><span class="val">${result.ssl.issuer}</span></div>`;
                     if (result.ssl.validTill) detailsHtml += `<div class="bulk-detail-row"><span>SSL Expires</span><span class="val">${result.ssl.validTill}${result.ssl.daysLeft != null ? ' (' + result.ssl.daysLeft + ' days)' : ''}</span></div>`;
                 }
+                if (result.security && result.security.score != null) {
+                    const sc = result.security.score;
+                    const scColor = sc >= 70 ? '#22c55e' : sc >= 40 ? '#eab308' : '#ef4444';
+                    detailsHtml += `<div class="bulk-detail-row"><span>Security</span><span style="color:${scColor};font-weight:600">${sc}/100</span></div>`;
+                }
                 detailsHtml += `</div>`;
             }
 
@@ -1932,7 +2139,7 @@
         function exportCSV() {
             if (bulkResultsData.length === 0) return;
 
-            const rows = [['URL', 'Is WordPress', 'Version', 'Theme', 'Plugins', 'Confidence']];
+            const rows = [['URL', 'Is WordPress', 'Version', 'Theme', 'Plugins', 'Confidence', 'Security Score']];
             for (const r of bulkResultsData) {
                 rows.push([
                     r.url,
@@ -1940,7 +2147,8 @@
                     r.version || '',
                     r.theme || '',
                     r.plugins.join('; '),
-                    r.error ? '' : r.confidence + '%'
+                    r.error ? '' : r.confidence + '%',
+                    r.security && r.security.score != null ? r.security.score + '/100' : ''
                 ]);
             }
 
