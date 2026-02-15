@@ -776,6 +776,67 @@
         .sf-icon.good { background: rgba(34, 197, 94, 0.15); color: #22c55e; }
         .sf-icon.warn { background: rgba(234, 179, 8, 0.15); color: #eab308; }
         .sf-icon.bad { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+
+        /* Suggestions */
+        .suggestions-toggle {
+            width: 100%;
+            margin-top: 12px;
+            padding: 10px 16px;
+            background: rgba(59, 130, 246, 0.1);
+            border: 1px solid rgba(59, 130, 246, 0.25);
+            border-radius: 8px;
+            color: var(--accent);
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .suggestions-toggle:hover { background: rgba(59, 130, 246, 0.18); }
+        .suggestions-toggle.open { border-radius: 8px 8px 0 0; margin-bottom: 0; }
+        .suggestions-container {
+            display: none;
+            border: 1px solid rgba(59, 130, 246, 0.25);
+            border-top: none;
+            border-radius: 0 0 8px 8px;
+            padding: 12px;
+        }
+        .suggestions-container.active { display: block; }
+        .suggestion-card {
+            padding: 10px 12px;
+            background: var(--bg);
+            border-radius: 8px;
+            margin-bottom: 8px;
+        }
+        .suggestion-card:last-child { margin-bottom: 0; }
+        .suggestion-card-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 6px;
+        }
+        .suggestion-card-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-bright);
+        }
+        .suggestion-card-text {
+            font-size: 12px;
+            color: var(--text-muted);
+            line-height: 1.5;
+        }
+        .suggestion-code {
+            display: block;
+            margin-top: 6px;
+            padding: 8px 10px;
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 11px;
+            color: var(--text-sub);
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
     </style>
 </head>
 <body>
@@ -827,17 +888,19 @@
                         <div id="sslRows"></div>
                     </div>
 
+                    <div id="pluginsSection" class="details-section" style="display:none">
+                        <div class="details-title">Detected Plugins</div>
+                        <div class="plugins-list" id="pluginsList"></div>
+                    </div>
+
                     <div id="securitySection" class="details-section" style="display:none">
                         <div class="security-score-header">
                             <div class="details-title" style="border:none;margin:0;padding:0">Security Score</div>
                             <div class="security-gauge" id="securityGauge"></div>
                         </div>
                         <div id="securityFindings"></div>
-                    </div>
-
-                    <div id="pluginsSection" class="details-section" style="display:none">
-                        <div class="details-title">Detected Plugins</div>
-                        <div class="plugins-list" id="pluginsList"></div>
+                        <button class="suggestions-toggle" id="suggestionsToggle" onclick="toggleSuggestions()" style="display:none">How to Improve Your Score</button>
+                        <div id="securitySuggestions" class="suggestions-container"></div>
                     </div>
 
                     <button class="share-btn" id="shareBtn" onclick="shareResults()">Share Results</button>
@@ -1128,23 +1191,23 @@
             // SSL checks (25 pts total)
             if (ssl) {
                 if (ssl.valid) {
-                    findings.push({ category: 'ssl', label: 'SSL Certificate Valid', detail: `Issued by ${ssl.issuer}`, level: 'good', points: 15, maxPoints: 15 });
+                    findings.push({ category: 'ssl', label: 'SSL Certificate Valid', detail: `Issued by ${ssl.issuer}`, level: 'good', points: 15, maxPoints: 15, suggestion: null });
                     if (ssl.daysLeft != null && ssl.daysLeft > 30) {
-                        findings.push({ category: 'ssl', label: 'SSL Not Expiring Soon', detail: `${ssl.daysLeft} days remaining until ${ssl.validTill}`, level: 'good', points: 5, maxPoints: 5 });
+                        findings.push({ category: 'ssl', label: 'SSL Not Expiring Soon', detail: `${ssl.daysLeft} days remaining until ${ssl.validTill}`, level: 'good', points: 5, maxPoints: 5, suggestion: null });
                     } else if (ssl.daysLeft != null) {
-                        findings.push({ category: 'ssl', label: 'SSL Expiring Soon', detail: `Only ${ssl.daysLeft} days left — renew before ${ssl.validTill}`, level: 'warn', points: 2, maxPoints: 5 });
+                        findings.push({ category: 'ssl', label: 'SSL Expiring Soon', detail: `Only ${ssl.daysLeft} days left — renew before ${ssl.validTill}`, level: 'warn', points: 2, maxPoints: 5, suggestion: { text: 'Renew your SSL certificate. Most hosting providers offer auto-renewal through cPanel or Plesk. If using Let\'s Encrypt, run:', code: 'sudo certbot renew' } });
                     }
                 } else {
-                    findings.push({ category: 'ssl', label: 'SSL Certificate Invalid', detail: 'Certificate is expired or not trusted — visitors will see browser warnings', level: 'bad', points: 0, maxPoints: 15 });
-                    findings.push({ category: 'ssl', label: 'SSL Expired', detail: 'Renew immediately to restore secure connections', level: 'bad', points: 0, maxPoints: 5 });
+                    findings.push({ category: 'ssl', label: 'SSL Certificate Invalid', detail: 'Certificate is expired or not trusted — visitors will see browser warnings', level: 'bad', points: 0, maxPoints: 15, suggestion: { text: 'Install a free SSL certificate via Let\'s Encrypt, or use your hosting provider\'s SSL tool (most offer one-click SSL in cPanel).', code: 'sudo certbot --apache -d yourdomain.com' } });
+                    findings.push({ category: 'ssl', label: 'SSL Expired', detail: 'Renew immediately to restore secure connections', level: 'bad', points: 0, maxPoints: 5, suggestion: null });
                 }
                 if (ssl.hsts) {
-                    findings.push({ category: 'ssl', label: 'HSTS Enabled', detail: 'Browser forced to use HTTPS — prevents downgrade attacks', level: 'good', points: 5, maxPoints: 5 });
+                    findings.push({ category: 'ssl', label: 'HSTS Enabled', detail: 'Browser forced to use HTTPS — prevents downgrade attacks', level: 'good', points: 5, maxPoints: 5, suggestion: null });
                 } else {
-                    findings.push({ category: 'ssl', label: 'HSTS Not Enabled', detail: 'Add Strict-Transport-Security header to force HTTPS connections', level: 'warn', points: 0, maxPoints: 5 });
+                    findings.push({ category: 'ssl', label: 'HSTS Not Enabled', detail: 'Add Strict-Transport-Security header to force HTTPS connections', level: 'warn', points: 0, maxPoints: 5, suggestion: { text: 'Add the HSTS header via your .htaccess file or use a plugin like Really Simple SSL.', code: 'Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"' } });
                 }
             } else {
-                findings.push({ category: 'ssl', label: 'SSL Check Failed', detail: 'Could not verify SSL certificate status', level: 'warn', points: 0, maxPoints: 25 });
+                findings.push({ category: 'ssl', label: 'SSL Check Failed', detail: 'Could not verify SSL certificate status', level: 'warn', points: 0, maxPoints: 25, suggestion: { text: 'Ensure your site has a valid SSL certificate installed. Contact your hosting provider or install one via Let\'s Encrypt.', code: null } });
             }
 
             // Version exposure (20 pts)
@@ -1152,37 +1215,37 @@
                 const sources = [];
                 if (feedExposesVersion) sources.push('RSS feed');
                 if (readmeExposed) sources.push('readme.html');
-                findings.push({ category: 'wp', label: 'WordPress Version Exposed', detail: `Version ${version} is visible via ${sources.length ? sources.join(' and ') : 'page source'} — attackers can target known vulnerabilities`, level: 'bad', points: 0, maxPoints: 20 });
+                findings.push({ category: 'wp', label: 'WordPress Version Exposed', detail: `Version ${version} is visible via ${sources.length ? sources.join(' and ') : 'page source'} — attackers can target known vulnerabilities`, level: 'bad', points: 0, maxPoints: 20, suggestion: { text: 'Hide your WordPress version from the page source by adding this to your theme\'s functions.php:', code: "remove_action('wp_head', 'wp_generator');\nadd_filter('the_generator', '__return_empty_string');" } });
             } else {
-                findings.push({ category: 'wp', label: 'WordPress Version Hidden', detail: 'Version number is not publicly exposed — reduces targeted attack surface', level: 'good', points: 20, maxPoints: 20 });
+                findings.push({ category: 'wp', label: 'WordPress Version Hidden', detail: 'Version number is not publicly exposed — reduces targeted attack surface', level: 'good', points: 20, maxPoints: 20, suggestion: null });
             }
 
             // XML-RPC (20 pts)
             if (xmlrpcOpen) {
-                findings.push({ category: 'wp', label: 'XML-RPC Enabled', detail: 'xmlrpc.php is accessible — commonly used for brute-force and DDoS amplification attacks. Disable if not needed.', level: 'bad', points: 0, maxPoints: 20 });
+                findings.push({ category: 'wp', label: 'XML-RPC Enabled', detail: 'xmlrpc.php is accessible — commonly used for brute-force and DDoS amplification attacks. Disable if not needed.', level: 'bad', points: 0, maxPoints: 20, suggestion: { text: 'Disable XML-RPC by adding this to your theme\'s functions.php, or block it via .htaccess:', code: "// In functions.php:\nadd_filter('xmlrpc_enabled', '__return_false');\n\n// Or in .htaccess:\n<Files xmlrpc.php>\n  Order Deny,Allow\n  Deny from all\n</Files>" } });
             } else {
-                findings.push({ category: 'wp', label: 'XML-RPC Disabled', detail: 'xmlrpc.php is not accessible — blocks a common attack vector', level: 'good', points: 20, maxPoints: 20 });
+                findings.push({ category: 'wp', label: 'XML-RPC Disabled', detail: 'xmlrpc.php is not accessible — blocks a common attack vector', level: 'good', points: 20, maxPoints: 20, suggestion: null });
             }
 
             // Login page (10 pts)
             if (loginExposed) {
-                findings.push({ category: 'wp', label: 'Login Page Exposed', detail: 'wp-login.php is publicly accessible — consider hiding or protecting it with rate limiting / 2FA', level: 'warn', points: 0, maxPoints: 10 });
+                findings.push({ category: 'wp', label: 'Login Page Exposed', detail: 'wp-login.php is publicly accessible — consider hiding or protecting it with rate limiting / 2FA', level: 'warn', points: 0, maxPoints: 10, suggestion: { text: 'Use a plugin like WPS Hide Login to change your login URL from the default /wp-login.php to a custom path. Also consider adding two-factor authentication.', code: null } });
             } else {
-                findings.push({ category: 'wp', label: 'Login Page Hidden', detail: 'wp-login.php is not directly accessible — reduces brute-force attack surface', level: 'good', points: 10, maxPoints: 10 });
+                findings.push({ category: 'wp', label: 'Login Page Hidden', detail: 'wp-login.php is not directly accessible — reduces brute-force attack surface', level: 'good', points: 10, maxPoints: 10, suggestion: null });
             }
 
             // readme.html (10 pts)
             if (readmeExposed) {
-                findings.push({ category: 'wp', label: 'readme.html Exposed', detail: 'WordPress readme.html is publicly accessible and may reveal version information', level: 'warn', points: 0, maxPoints: 10 });
+                findings.push({ category: 'wp', label: 'readme.html Exposed', detail: 'WordPress readme.html is publicly accessible and may reveal version information', level: 'warn', points: 0, maxPoints: 10, suggestion: { text: 'Delete the readme.html file from your WordPress root directory. It gets recreated on updates, so add a post-update script or use .htaccess to block access:', code: '<Files readme.html>\n  Order Deny,Allow\n  Deny from all\n</Files>' } });
             } else {
-                findings.push({ category: 'wp', label: 'readme.html Hidden', detail: 'WordPress readme.html is not publicly accessible', level: 'good', points: 10, maxPoints: 10 });
+                findings.push({ category: 'wp', label: 'readme.html Hidden', detail: 'WordPress readme.html is not publicly accessible', level: 'good', points: 10, maxPoints: 10, suggestion: null });
             }
 
             // Directory listing (15 pts)
             if (directoryListing) {
-                findings.push({ category: 'wp', label: 'Directory Listing Enabled', detail: 'wp-content/ shows file listing — exposes internal structure, plugin/theme files to attackers', level: 'bad', points: 0, maxPoints: 15 });
+                findings.push({ category: 'wp', label: 'Directory Listing Enabled', detail: 'wp-content/ shows file listing — exposes internal structure, plugin/theme files to attackers', level: 'bad', points: 0, maxPoints: 15, suggestion: { text: 'Disable directory browsing by adding this line to your .htaccess file:', code: 'Options -Indexes' } });
             } else {
-                findings.push({ category: 'wp', label: 'Directory Listing Disabled', detail: 'Server does not expose directory contents — internal file structure is hidden', level: 'good', points: 15, maxPoints: 15 });
+                findings.push({ category: 'wp', label: 'Directory Listing Disabled', detail: 'Server does not expose directory contents — internal file structure is hidden', level: 'good', points: 15, maxPoints: 15, suggestion: null });
             }
 
             const totalMax = findings.reduce((s, f) => s + f.maxPoints, 0);
@@ -1632,6 +1695,21 @@
             loading.classList.remove('active');
         }
 
+        function toggleSuggestions() {
+            const btn = document.getElementById('suggestionsToggle');
+            const container = document.getElementById('securitySuggestions');
+            const isOpen = container.classList.contains('active');
+            if (isOpen) {
+                container.classList.remove('active');
+                btn.classList.remove('open');
+                btn.textContent = 'How to Improve Your Score';
+            } else {
+                container.classList.add('active');
+                btn.classList.add('open');
+                btn.textContent = 'Hide Suggestions';
+            }
+        }
+
         function showError(id, msg) {
             const el = document.getElementById(id);
             el.textContent = msg;
@@ -1700,6 +1778,8 @@
             const securitySection = document.getElementById('securitySection');
             const securityFindings = document.getElementById('securityFindings');
             const securityGauge = document.getElementById('securityGauge');
+            const suggestionsToggle = document.getElementById('suggestionsToggle');
+            const securitySuggestions = document.getElementById('securitySuggestions');
             if (security && security.score != null && security.findings.length > 0) {
                 securitySection.style.display = 'block';
                 const score = security.score;
@@ -1722,6 +1802,27 @@
                         </div>
                     </div>
                 `).join('');
+
+                // Suggestions for warn/bad findings
+                const actionable = security.findings.filter(f => f.suggestion && (f.level === 'warn' || f.level === 'bad'));
+                if (actionable.length > 0) {
+                    suggestionsToggle.style.display = 'block';
+                    suggestionsToggle.classList.remove('open');
+                    securitySuggestions.classList.remove('active');
+                    securitySuggestions.innerHTML = actionable.map(f => `
+                        <div class="suggestion-card">
+                            <div class="suggestion-card-header">
+                                <span class="sf-icon ${f.level}">${f.level === 'warn' ? '!' : '\u2717'}</span>
+                                <span class="suggestion-card-title">${f.label}</span>
+                            </div>
+                            <div class="suggestion-card-text">${f.suggestion.text}${f.suggestion.code ? `<code class="suggestion-code">${f.suggestion.code}</code>` : ''}</div>
+                        </div>
+                    `).join('');
+                } else {
+                    suggestionsToggle.style.display = 'none';
+                    securitySuggestions.classList.remove('active');
+                    securitySuggestions.innerHTML = '';
+                }
             } else {
                 securitySection.style.display = 'none';
             }
