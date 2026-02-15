@@ -1755,11 +1755,11 @@
                 pluginsSection.style.display = 'none';
             }
 
-            // SSL section
+            // SSL section (WordPress only)
             const sslSection = document.getElementById('sslSection');
             const sslRows = document.getElementById('sslRows');
             sslRows.innerHTML = '';
-            if (ssl) {
+            if (isWordPress && ssl) {
                 sslSection.style.display = 'block';
                 const statusClass = ssl.valid ? (ssl.daysLeft != null && ssl.daysLeft < 30 ? 'expiring' : 'valid') : 'expired';
                 const statusText = ssl.valid ? (ssl.daysLeft != null && ssl.daysLeft < 30 ? 'Expiring Soon' : 'Valid') : 'Invalid / Expired';
@@ -1780,7 +1780,7 @@
             const securityGauge = document.getElementById('securityGauge');
             const suggestionsToggle = document.getElementById('suggestionsToggle');
             const securitySuggestions = document.getElementById('securitySuggestions');
-            if (security && security.score != null && security.findings.length > 0) {
+            if (isWordPress && security && security.score != null && security.findings.length > 0) {
                 securitySection.style.display = 'block';
                 const score = security.score;
                 const color = score >= 70 ? '#22c55e' : score >= 40 ? '#eab308' : '#ef4444';
