@@ -631,6 +631,12 @@
         .file-info #fileUrlCount { color: var(--text-muted); white-space: nowrap; }
 
         /* History */
+        /* SSL */
+        .ssl-status { font-weight: 600; font-size: 13px; }
+        .ssl-status.valid { color: #22c55e; }
+        .ssl-status.expiring { color: #eab308; }
+        .ssl-status.expired { color: #ef4444; }
+
         .history-section { margin-top: 20px; }
 
         .history-item {
@@ -769,6 +775,11 @@
                     <div id="infoSection" class="details-section" style="display:none">
                         <div class="details-title">Information</div>
                         <div id="infoRows"></div>
+                    </div>
+
+                    <div id="sslSection" class="details-section" style="display:none">
+                        <div class="details-title">SSL Certificate</div>
+                        <div id="sslRows"></div>
                     </div>
 
                     <div id="pluginsSection" class="details-section" style="display:none">
@@ -1040,6 +1051,26 @@
             return new Promise(resolve => setTimeout(resolve, ms));
         }
 
+        // --- SSL certificate check ---
+        async function checkSSL(domain) {
+            try {
+                const resp = await fetch(`https://ssl-checker.io/api/v1/check/${domain}`);
+                if (!resp.ok) throw new Error('SSL check failed');
+                const data = await resp.json();
+                const r = data.result || data;
+                return {
+                    valid: !!r.cert_valid,
+                    issuer: r.issuer_o || r.issuer_cn || 'Unknown',
+                    validFrom: r.valid_from || null,
+                    validTill: r.valid_till || null,
+                    daysLeft: r.days_left != null ? r.days_left : null,
+                    hsts: !!r.hsts_header_enabled
+                };
+            } catch {
+                return null;
+            }
+        }
+
         // --- Core detection logic (shared by single & bulk) ---
         async function detectWordPress(urlString) {
             const baseUrl = normalizeUrl(urlString);
@@ -1047,6 +1078,10 @@
             let version = null;
             let theme = null;
             let plugins = new Set();
+
+            // Start SSL check in parallel with main fetch
+            const domain = baseUrl.hostname;
+            const sslPromise = checkSSL(domain);
 
             const html = await fetchText(baseUrl.origin);
 
@@ -1124,6 +1159,9 @@
             const isWordPress = (strongSignals >= 1 && passed >= 2) || passed >= 3;
             const confidence = Math.round((passed / total) * 100);
 
+            // Await SSL result
+            const ssl = await sslPromise;
+
             return {
                 url: baseUrl.origin,
                 isWordPress,
@@ -1131,7 +1169,8 @@
                 checks,
                 version,
                 theme,
-                plugins: [...plugins]
+                plugins: [...plugins],
+                ssl
             };
         }
 
@@ -1147,6 +1186,7 @@
                 theme: result.theme,
                 plugins: result.plugins || [],
                 checks: result.checks || {},
+                ssl: result.ssl || null,
                 timestamp: Date.now()
             });
             // Keep last 50 entries
@@ -1190,7 +1230,7 @@
 
             // Show saved results directly without re-scanning
             if (item.checks && Object.keys(item.checks).length > 0) {
-                displayResults(item.isWordPress, item.confidence, item.checks, item.version, item.theme, item.plugins || [], null);
+                displayResults(item.isWordPress, item.confidence, item.checks, item.version, item.theme, item.plugins || [], null, item.ssl || null);
             } else {
                 // Old history entry without checks — re-scan
                 scan();
@@ -1233,7 +1273,7 @@
                 const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
                 result.scanTime = elapsed;
                 saveToHistory(result);
-                displayResults(result.isWordPress, result.confidence, result.checks, result.version, result.theme, result.plugins, elapsed);
+                displayResults(result.isWordPress, result.confidence, result.checks, result.version, result.theme, result.plugins, elapsed, result.ssl);
             } catch (err) {
                 showError('errorMsg', 'Could not fetch the website. Make sure the URL is correct and the site is accessible.');
             }
@@ -1249,7 +1289,7 @@
             el.classList.add('active');
         }
 
-        function displayResults(isWordPress, confidence, checks, version, theme, plugins, scanTime) {
+        function displayResults(isWordPress, confidence, checks, version, theme, plugins, scanTime, ssl) {
             const results = document.getElementById('results');
             const verdict = document.getElementById('verdict');
             const verdictText = document.getElementById('verdictText');
@@ -1286,6 +1326,25 @@
                 });
             } else {
                 pluginsSection.style.display = 'none';
+            }
+
+            // SSL section
+            const sslSection = document.getElementById('sslSection');
+            const sslRows = document.getElementById('sslRows');
+            sslRows.innerHTML = '';
+            if (ssl) {
+                sslSection.style.display = 'block';
+                const statusClass = ssl.valid ? (ssl.daysLeft != null && ssl.daysLeft < 30 ? 'expiring' : 'valid') : 'expired';
+                const statusText = ssl.valid ? (ssl.daysLeft != null && ssl.daysLeft < 30 ? 'Expiring Soon' : 'Valid') : 'Invalid / Expired';
+                sslRows.innerHTML = `
+                    <div class="detail-row"><span class="label">Status</span><span class="ssl-status ${statusClass}">${statusText}</span></div>
+                    <div class="detail-row"><span class="label">Issuer</span><span class="value">${ssl.issuer}</span></div>
+                    ${ssl.validTill ? `<div class="detail-row"><span class="label">Expires</span><span class="value">${ssl.validTill}</span></div>` : ''}
+                    ${ssl.daysLeft != null ? `<div class="detail-row"><span class="label">Days Left</span><span class="ssl-status ${statusClass}">${ssl.daysLeft} days</span></div>` : ''}
+                    ${ssl.hsts ? `<div class="detail-row"><span class="label">HSTS</span><span class="value">Enabled</span></div>` : ''}
+                `;
+            } else {
+                sslSection.style.display = 'none';
             }
 
             const checksList = document.getElementById('checksList');
@@ -1514,6 +1573,13 @@
                 detailsHtml = `<div class="bulk-result-details" id="${id}">`;
                 if (result.version) detailsHtml += `<div class="bulk-detail-row"><span>Version</span><span class="val">${result.version}</span></div>`;
                 if (result.theme) detailsHtml += `<div class="bulk-detail-row"><span>Theme</span><span class="val">${result.theme}</span></div>`;
+                if (result.ssl) {
+                    const sslClass = result.ssl.valid ? (result.ssl.daysLeft != null && result.ssl.daysLeft < 30 ? 'expiring' : 'valid') : 'expired';
+                    const sslLabel = result.ssl.valid ? (result.ssl.daysLeft != null && result.ssl.daysLeft < 30 ? 'Expiring Soon' : 'Valid') : 'Expired';
+                    detailsHtml += `<div class="bulk-detail-row"><span>SSL</span><span class="ssl-status ${sslClass}">${sslLabel}</span></div>`;
+                    detailsHtml += `<div class="bulk-detail-row"><span>SSL Issuer</span><span class="val">${result.ssl.issuer}</span></div>`;
+                    if (result.ssl.validTill) detailsHtml += `<div class="bulk-detail-row"><span>SSL Expires</span><span class="val">${result.ssl.validTill}${result.ssl.daysLeft != null ? ' (' + result.ssl.daysLeft + ' days)' : ''}</span></div>`;
+                }
                 detailsHtml += `</div>`;
             }
 
