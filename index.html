@@ -731,6 +731,54 @@
         .share-btn:hover { background: var(--btn-secondary-hover); }
         .share-btn.active { display: block; }
 
+        /* PageSpeed Insights */
+        .psi-gauges {
+            display: flex;
+            justify-content: space-around;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 14px;
+        }
+        .psi-gauge-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+            min-width: 70px;
+        }
+        .psi-gauge {
+            position: relative;
+            width: 56px;
+            height: 56px;
+        }
+        .psi-gauge svg { transform: rotate(-90deg); }
+        .psi-gauge-bg { fill: none; stroke: var(--border); stroke-width: 5; }
+        .psi-gauge-fill { fill: none; stroke-width: 5; stroke-linecap: round; transition: stroke-dashoffset 0.6s ease; }
+        .psi-gauge-text {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 15px;
+            font-weight: 700;
+        }
+        .psi-gauge-label {
+            font-size: 11px;
+            color: var(--text-muted);
+            text-align: center;
+            line-height: 1.2;
+        }
+        .psi-metric-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 5px 0;
+            font-size: 13px;
+        }
+        .psi-metric-label { color: var(--text-sub); }
+        .psi-metric-value { font-weight: 500; }
+
         /* Security Score */
         .security-score-header {
             display: flex;
@@ -891,6 +939,18 @@
                     <div id="pluginsSection" class="details-section" style="display:none">
                         <div class="details-title">Detected Plugins</div>
                         <div class="plugins-list" id="pluginsList"></div>
+                    </div>
+
+                    <div id="pagespeedSection" class="details-section" style="display:none">
+                        <div class="details-title">PageSpeed Insights</div>
+                        <div id="pagespeedLoading" style="display:none;text-align:center;padding:12px 0;font-size:13px;color:var(--text-muted)">
+                            <div class="spinner" style="width:24px;height:24px;border-width:3px;margin-bottom:8px"></div>
+                            Analyzing page performance...
+                        </div>
+                        <div id="pagespeedScores" style="display:none">
+                            <div class="psi-gauges" id="psiGauges"></div>
+                            <div id="psiMetrics"></div>
+                        </div>
                     </div>
 
                     <div id="securitySection" class="details-section" style="display:none">
@@ -1182,6 +1242,93 @@
             } catch {
                 return null;
             }
+        }
+
+        // --- PageSpeed Insights ---
+        const PSI_API_KEY = 'AIzaSyBEa44t8LE6HFv1r2tTe8MbpQ1NIbsSEVw';
+
+        async function fetchPageSpeed(url) {
+            try {
+                const apiUrl = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(url)}&key=${PSI_API_KEY}&category=performance&category=accessibility&category=best-practices&category=seo`;
+                const resp = await fetch(apiUrl);
+                if (!resp.ok) throw new Error(`PSI API error ${resp.status}`);
+                const data = await resp.json();
+                const cats = data.lighthouseResult?.categories || {};
+                const audits = data.lighthouseResult?.audits || {};
+                return {
+                    performance: cats.performance ? Math.round(cats.performance.score * 100) : null,
+                    accessibility: cats.accessibility ? Math.round(cats.accessibility.score * 100) : null,
+                    bestPractices: cats['best-practices'] ? Math.round(cats['best-practices'].score * 100) : null,
+                    seo: cats.seo ? Math.round(cats.seo.score * 100) : null,
+                    metrics: {
+                        fcp: audits['first-contentful-paint']?.displayValue || null,
+                        lcp: audits['largest-contentful-paint']?.displayValue || null,
+                        tbt: audits['total-blocking-time']?.displayValue || null,
+                        cls: audits['cumulative-layout-shift']?.displayValue || null,
+                        si: audits['speed-index']?.displayValue || null,
+                        tti: audits['interactive']?.displayValue || null,
+                    }
+                };
+            } catch {
+                return null;
+            }
+        }
+
+        function renderPageSpeed(psi) {
+            const section = document.getElementById('pagespeedSection');
+            const loadingEl = document.getElementById('pagespeedLoading');
+            const scoresEl = document.getElementById('pagespeedScores');
+            const gaugesEl = document.getElementById('psiGauges');
+            const metricsEl = document.getElementById('psiMetrics');
+
+            loadingEl.style.display = 'none';
+
+            if (!psi) {
+                scoresEl.style.display = 'none';
+                section.style.display = 'none';
+                return;
+            }
+
+            scoresEl.style.display = 'block';
+
+            const categories = [
+                { label: 'Performance', score: psi.performance },
+                { label: 'Accessibility', score: psi.accessibility },
+                { label: 'Best Practices', score: psi.bestPractices },
+                { label: 'SEO', score: psi.seo }
+            ];
+
+            const circumference = 2 * Math.PI * 22;
+            gaugesEl.innerHTML = categories.map(cat => {
+                if (cat.score == null) return '';
+                const color = cat.score >= 90 ? '#22c55e' : cat.score >= 50 ? '#eab308' : '#ef4444';
+                const offset = circumference - (cat.score / 100) * circumference;
+                return `<div class="psi-gauge-item">
+                    <div class="psi-gauge">
+                        <svg width="56" height="56" viewBox="0 0 56 56">
+                            <circle class="psi-gauge-bg" cx="28" cy="28" r="22"/>
+                            <circle class="psi-gauge-fill" cx="28" cy="28" r="22" stroke="${color}" stroke-dasharray="${circumference}" stroke-dashoffset="${offset}"/>
+                        </svg>
+                        <div class="psi-gauge-text" style="color:${color}">${cat.score}</div>
+                    </div>
+                    <div class="psi-gauge-label">${cat.label}</div>
+                </div>`;
+            }).join('');
+
+            const metricLabels = {
+                fcp: 'First Contentful Paint',
+                lcp: 'Largest Contentful Paint',
+                tbt: 'Total Blocking Time',
+                cls: 'Cumulative Layout Shift',
+                si: 'Speed Index',
+                tti: 'Time to Interactive'
+            };
+
+            const metricRows = Object.entries(psi.metrics)
+                .filter(([, v]) => v != null)
+                .map(([key, val]) => `<div class="psi-metric-row"><span class="psi-metric-label">${metricLabels[key]}</span><span class="psi-metric-value">${val}</span></div>`)
+                .join('');
+            metricsEl.innerHTML = metricRows;
         }
 
         // --- Security score calculation ---
@@ -1786,6 +1933,9 @@
             if (item.checks && Object.keys(item.checks).length > 0) {
                 lastScanResult = item;
                 displayResults(item.isWordPress, item.confidence, item.checks, item.version, item.theme, item.plugins || [], null, item.ssl || null, item.security || null);
+                if (item.isWordPress) {
+                    fetchPageSpeed(item.url).then(psi => renderPageSpeed(psi));
+                }
             } else {
                 // Old history entry without checks — re-scan
                 scan();
@@ -1838,6 +1988,7 @@
             document.getElementById('sslSection').style.display = 'none';
             document.getElementById('pluginsSection').style.display = 'none';
             document.getElementById('securitySection').style.display = 'none';
+            document.getElementById('pagespeedSection').style.display = 'none';
             document.getElementById('shareBtn').classList.remove('active');
 
             verdict.className = 'verdict';
@@ -1888,6 +2039,11 @@
                 saveToHistory(result);
                 lastScanResult = result;
                 displayResults(result.isWordPress, result.confidence, result.checks, result.version, result.theme, result.plugins, elapsed, result.ssl, result.security);
+
+                // Fetch PageSpeed in background for WordPress sites
+                if (result.isWordPress) {
+                    fetchPageSpeed(result.url).then(psi => renderPageSpeed(psi));
+                }
             } catch (err) {
                 document.getElementById('results').classList.remove('active');
                 showError('errorMsg', 'Could not fetch the website. Make sure the URL is correct and the site is accessible.');
@@ -2028,6 +2184,16 @@
                 }
             } else {
                 securitySection.style.display = 'none';
+            }
+
+            // PageSpeed section (WordPress only, shows loading state)
+            const pagespeedSection = document.getElementById('pagespeedSection');
+            if (isWordPress) {
+                pagespeedSection.style.display = 'block';
+                document.getElementById('pagespeedLoading').style.display = 'block';
+                document.getElementById('pagespeedScores').style.display = 'none';
+            } else {
+                pagespeedSection.style.display = 'none';
             }
 
             document.getElementById('shareBtn').classList.add('active');
