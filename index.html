@@ -1098,9 +1098,9 @@
         // --- SSL certificate check ---
         async function checkSSL(domain) {
             try {
-                const resp = await fetch(`https://ssl-checker.io/api/v1/check/${domain}`);
-                if (!resp.ok) throw new Error('SSL check failed');
-                const data = await resp.json();
+                const sslUrl = `https://ssl-checker.io/api/v1/check/${domain}`;
+                const resp = await proxyFetch(sslUrl);
+                const data = JSON.parse(await resp.text());
                 const r = data.result || data;
                 return {
                     valid: !!r.cert_valid,
