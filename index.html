@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WordPress Detector</title>
+    <title>WP Inspector</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -779,12 +779,12 @@
     <div class="container">
         <div class="card">
             <div class="header">
-                <h1>WordPress Detector</h1>
+                <h1>WP Inspector</h1>
                 <button class="theme-toggle" onclick="toggleTheme()" title="Toggle light/dark mode">
                     <span id="themeIcon">&#9788;</span>
                 </button>
             </div>
-            <p class="subtitle">Check if websites run on WordPress</p>
+            <p class="subtitle">Detect WordPress, inspect themes, plugins & SSL</p>
 
             <div class="tabs">
                 <button class="tab active" onclick="switchTab('single')">Single URL</button>
@@ -1318,12 +1318,12 @@
             }
             lines.push(`Confidence: ${r.confidence}%`);
             lines.push('');
-            lines.push('Scanned with WordPress Detector');
+            lines.push('Scanned with WP Inspector');
 
             const text = lines.join('\n');
 
             if (navigator.share) {
-                navigator.share({ title: 'WordPress Scan Result', text }).catch(() => {
+                navigator.share({ title: 'WP Inspector Result', text }).catch(() => {
                     copyToClipboard(text);
                 });
             } else {
