@@ -319,34 +319,6 @@
         .detail-row .label { color: var(--text-sub); }
         .detail-row .value { color: var(--text-bright); font-weight: 500; }
 
-        .check-item {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            padding: 6px 0;
-            font-size: 14px;
-        }
-
-        .check-icon {
-            width: 20px;
-            height: 20px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 12px;
-            flex-shrink: 0;
-        }
-
-        .check-icon.pass {
-            background: rgba(34, 197, 94, 0.15);
-            color: #22c55e;
-        }
-
-        .check-icon.fail {
-            background: rgba(239, 68, 68, 0.15);
-            color: #ef4444;
-        }
 
         .plugins-list {
             display: flex;
@@ -744,21 +716,6 @@
         }
         .url-warning.active { display: block; }
 
-        /* Live checks animation */
-        .check-item.pending .check-icon {
-            background: rgba(148, 163, 184, 0.15);
-            color: var(--text-dim);
-        }
-        .check-item.pending span:last-child { color: var(--text-dim); }
-
-        @keyframes checkPop {
-            0% { transform: scale(1); }
-            50% { transform: scale(1.3); }
-            100% { transform: scale(1); }
-        }
-        .check-item.just-resolved .check-icon {
-            animation: checkPop 0.3s ease;
-        }
 
         /* Share button */
         .share-btn {
@@ -881,11 +838,6 @@
                     <div id="pluginsSection" class="details-section" style="display:none">
                         <div class="details-title">Detected Plugins</div>
                         <div class="plugins-list" id="pluginsList"></div>
-                    </div>
-
-                    <div class="details-section">
-                        <div class="details-title">Detection Checks</div>
-                        <div id="checksList"></div>
                     </div>
 
                     <button class="share-btn" id="shareBtn" onclick="shareResults()">Share Results</button>
@@ -1383,29 +1335,24 @@
             const generatorMatch = html.match(/<meta[^>]+name=["']generator["'][^>]+content=["']([^"']*wordpress[^"']*)["']/i)
                 || html.match(/<meta[^>]+content=["']([^"']*wordpress[^"']*)["'][^>]+name=["']generator["']/i);
             checks['Meta Generator Tag'] = !!generatorMatch;
-            updateLiveCheck('Meta Generator Tag', checks['Meta Generator Tag']);
             if (generatorMatch) {
                 const vMatch = generatorMatch[1].match(/wordpress\s*\.?\s*([\d.]+)/i);
                 if (vMatch) version = vMatch[1];
             }
 
             checks['wp-content/wp-includes Paths'] = /\/wp-content\//i.test(html) || /\/wp-includes\//i.test(html);
-            updateLiveCheck('wp-content/wp-includes Paths', checks['wp-content/wp-includes Paths']);
 
             checks['WordPress Scripts (emoji/embed)'] = /wp-emoji-release/i.test(html) || /wp-embed\.min\.js/i.test(html);
-            updateLiveCheck('WordPress Scripts (emoji/embed)', checks['WordPress Scripts (emoji/embed)']);
 
             const themeMatches = html.matchAll(/\/wp-content\/themes\/([a-z0-9_-]+)\//gi);
             const themes = new Set();
             for (const m of themeMatches) themes.add(m[1]);
             if (themes.size > 0) theme = [...themes][0];
             checks['Theme Detected'] = themes.size > 0;
-            updateLiveCheck('Theme Detected', checks['Theme Detected']);
 
             const pluginMatches = html.matchAll(/\/wp-content\/plugins\/([a-z0-9_-]+)\//gi);
             for (const m of pluginMatches) plugins.add(m[1]);
             checks['Plugins Detected'] = plugins.size > 0;
-            updateLiveCheck('Plugins Detected', checks['Plugins Detected']);
 
             // Endpoint checks — resolve as they complete
             const endpointChecks = [
@@ -1427,7 +1374,6 @@
                 } catch {
                     checks[ec.name] = false;
                 }
-                updateLiveCheck(ec.name, checks[ec.name]);
             }));
 
             const feedExposesVersion = await feedPromise;
@@ -1615,20 +1561,8 @@
         }
 
         // All check names used by detectWordPress, in order
-        const ALL_CHECK_NAMES = [
-            'Meta Generator Tag',
-            'wp-content/wp-includes Paths',
-            'WordPress Scripts (emoji/embed)',
-            'Theme Detected',
-            'Plugins Detected',
-            'wp-login.php',
-            'REST API (/wp-json/)',
-            'XML-RPC'
-        ];
-
         function showLiveChecks() {
             const results = document.getElementById('results');
-            const checksList = document.getElementById('checksList');
             const verdict = document.getElementById('verdict');
             const verdictText = document.getElementById('verdictText');
             const confidenceText = document.getElementById('confidenceText');
@@ -1645,25 +1579,7 @@
             verdictText.style.color = 'var(--text-muted)';
             confidenceText.textContent = '';
 
-            checksList.innerHTML = ALL_CHECK_NAMES.map(name =>
-                `<div class="check-item pending" data-check="${name}">
-                    <span class="check-icon">\u2022</span>
-                    <span>${name}</span>
-                </div>`
-            ).join('');
-
             results.classList.add('active');
-        }
-
-        function updateLiveCheck(name, passed) {
-            const item = document.querySelector(`.check-item[data-check="${name}"]`);
-            if (!item) return;
-            item.classList.remove('pending');
-            item.classList.add('just-resolved');
-            const icon = item.querySelector('.check-icon');
-            icon.className = `check-icon ${passed ? 'pass' : 'fail'}`;
-            icon.textContent = passed ? '\u2713' : '\u2717';
-            setTimeout(() => item.classList.remove('just-resolved'), 300);
         }
 
         async function scan() {
@@ -1808,16 +1724,6 @@
                 `).join('');
             } else {
                 securitySection.style.display = 'none';
-            }
-
-            const checksList = document.getElementById('checksList');
-            checksList.innerHTML = '';
-            for (const [name, passed] of Object.entries(checks)) {
-                checksList.innerHTML += `
-                    <div class="check-item">
-                        <span class="check-icon ${passed ? 'pass' : 'fail'}">${passed ? '\u2713' : '\u2717'}</span>
-                        <span>${name}</span>
-                    </div>`;
             }
 
             document.getElementById('shareBtn').classList.add('active');
