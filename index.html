@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,14 +7,51 @@
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
+        :root[data-theme="dark"] {
+            --bg: #0f172a;
+            --card-bg: #1e293b;
+            --input-bg: #0f172a;
+            --text: #e2e8f0;
+            --text-bright: #f8fafc;
+            --text-muted: #94a3b8;
+            --text-dim: #64748b;
+            --text-sub: #cbd5e1;
+            --border: #334155;
+            --shadow: rgba(0, 0, 0, 0.4);
+            --accent: #3b82f6;
+            --accent-hover: #2563eb;
+            --btn-secondary-bg: #334155;
+            --btn-secondary-hover: #475569;
+            --result-details-bg: #1a2536;
+        }
+
+        :root[data-theme="light"] {
+            --bg: #f1f5f9;
+            --card-bg: #ffffff;
+            --input-bg: #f8fafc;
+            --text: #334155;
+            --text-bright: #0f172a;
+            --text-muted: #64748b;
+            --text-dim: #94a3b8;
+            --text-sub: #475569;
+            --border: #e2e8f0;
+            --shadow: rgba(0, 0, 0, 0.1);
+            --accent: #3b82f6;
+            --accent-hover: #2563eb;
+            --btn-secondary-bg: #e2e8f0;
+            --btn-secondary-hover: #cbd5e1;
+            --result-details-bg: #f8fafc;
+        }
+
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #0f172a;
-            color: #e2e8f0;
+            background: var(--bg);
+            color: var(--text);
             min-height: 100vh;
             display: flex;
             align-items: center;
             justify-content: center;
+            transition: background 0.3s, color 0.3s;
         }
 
         .container {
@@ -24,22 +61,53 @@
         }
 
         .card {
-            background: #1e293b;
+            background: var(--card-bg);
             border-radius: 16px;
             padding: 40px 32px;
-            box-shadow: 0 25px 50px rgba(0, 0, 0, 0.4);
+            box-shadow: 0 25px 50px var(--shadow);
+            transition: background 0.3s;
+        }
+
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 8px;
+            position: relative;
         }
 
         h1 {
             text-align: center;
             font-size: 28px;
-            margin-bottom: 8px;
-            color: #f8fafc;
+            color: var(--text-bright);
         }
+
+        .theme-toggle {
+            position: absolute;
+            right: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            background: var(--btn-secondary-bg);
+            border: none;
+            border-radius: 8px;
+            padding: 8px;
+            cursor: pointer;
+            color: var(--text-muted);
+            font-size: 18px;
+            line-height: 1;
+            transition: background 0.2s;
+            width: 36px;
+            height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .theme-toggle:hover { background: var(--btn-secondary-hover); }
 
         .subtitle {
             text-align: center;
-            color: #94a3b8;
+            color: var(--text-muted);
             font-size: 14px;
             margin-bottom: 24px;
         }
@@ -49,7 +117,7 @@
             display: flex;
             gap: 4px;
             margin-bottom: 24px;
-            background: #0f172a;
+            background: var(--bg);
             border-radius: 10px;
             padding: 4px;
         }
@@ -60,7 +128,7 @@
             border: none;
             border-radius: 8px;
             background: transparent;
-            color: #94a3b8;
+            color: var(--text-muted);
             font-size: 14px;
             font-weight: 500;
             cursor: pointer;
@@ -68,12 +136,12 @@
         }
 
         .tab.active {
-            background: #3b82f6;
+            background: var(--accent);
             color: white;
         }
 
         .tab:not(.active):hover {
-            color: #e2e8f0;
+            color: var(--text);
         }
 
         .tab-content { display: none; }
@@ -95,38 +163,38 @@
         input[type="text"] {
             flex: 1;
             padding: 14px 18px;
-            border: 2px solid #334155;
+            border: 2px solid var(--border);
             border-radius: 10px;
-            background: #0f172a;
-            color: #f8fafc;
+            background: var(--input-bg);
+            color: var(--text-bright);
             font-size: 15px;
             outline: none;
-            transition: border-color 0.2s;
+            transition: border-color 0.2s, background 0.3s, color 0.3s;
         }
 
-        input[type="text"]:focus { border-color: #3b82f6; }
+        input[type="text"]:focus { border-color: var(--accent); }
 
         textarea {
             width: 100%;
             padding: 14px 18px;
-            border: 2px solid #334155;
+            border: 2px solid var(--border);
             border-radius: 10px;
-            background: #0f172a;
-            color: #f8fafc;
+            background: var(--input-bg);
+            color: var(--text-bright);
             font-size: 14px;
             font-family: inherit;
             outline: none;
             resize: vertical;
             min-height: 120px;
             margin-bottom: 12px;
-            transition: border-color 0.2s;
+            transition: border-color 0.2s, background 0.3s, color 0.3s;
         }
 
-        textarea:focus { border-color: #3b82f6; }
+        textarea:focus { border-color: var(--accent); }
 
         button {
             padding: 14px 28px;
-            background: #3b82f6;
+            background: var(--accent);
             color: white;
             border: none;
             border-radius: 10px;
@@ -137,9 +205,9 @@
             white-space: nowrap;
         }
 
-        button:hover { background: #2563eb; }
+        button:hover { background: var(--accent-hover); }
         button:disabled {
-            background: #334155;
+            background: var(--border);
             cursor: not-allowed;
         }
 
@@ -152,10 +220,11 @@
         .bulk-actions button { flex: 1; }
 
         .btn-secondary {
-            background: #334155;
+            background: var(--btn-secondary-bg);
+            color: var(--text);
         }
 
-        .btn-secondary:hover { background: #475569; }
+        .btn-secondary:hover { background: var(--btn-secondary-hover); }
 
         /* Loading */
         .loading {
@@ -169,8 +238,8 @@
         .spinner {
             width: 40px;
             height: 40px;
-            border: 4px solid #334155;
-            border-top-color: #3b82f6;
+            border: 4px solid var(--border);
+            border-top-color: var(--accent);
             border-radius: 50%;
             animation: spin 0.8s linear infinite;
             margin: 0 auto 16px;
@@ -179,7 +248,7 @@
         @keyframes spin { to { transform: rotate(360deg); } }
 
         .loading-text {
-            color: #94a3b8;
+            color: var(--text-muted);
             font-size: 14px;
         }
 
@@ -209,7 +278,7 @@
             text-transform: uppercase;
             letter-spacing: 1px;
             margin-bottom: 8px;
-            color: #94a3b8;
+            color: var(--text-muted);
         }
 
         .verdict-text {
@@ -222,7 +291,7 @@
 
         .confidence {
             font-size: 13px;
-            color: #94a3b8;
+            color: var(--text-muted);
             margin-top: 6px;
         }
 
@@ -233,10 +302,10 @@
             font-size: 13px;
             text-transform: uppercase;
             letter-spacing: 1px;
-            color: #64748b;
+            color: var(--text-dim);
             margin-bottom: 10px;
             padding-bottom: 6px;
-            border-bottom: 1px solid #334155;
+            border-bottom: 1px solid var(--border);
         }
 
         .detail-row {
@@ -247,8 +316,8 @@
             font-size: 14px;
         }
 
-        .detail-row .label { color: #cbd5e1; }
-        .detail-row .value { color: #f8fafc; font-weight: 500; }
+        .detail-row .label { color: var(--text-sub); }
+        .detail-row .value { color: var(--text-bright); font-weight: 500; }
 
         .check-item {
             display: flex;
@@ -287,11 +356,11 @@
         }
 
         .plugin-tag {
-            background: #334155;
+            background: var(--btn-secondary-bg);
             padding: 4px 10px;
             border-radius: 6px;
             font-size: 12px;
-            color: #cbd5e1;
+            color: var(--text-sub);
         }
 
         .error-msg {
@@ -316,7 +385,7 @@
         .bulk-progress.active { display: block; }
 
         .progress-bar-container {
-            background: #0f172a;
+            background: var(--bg);
             border-radius: 8px;
             height: 8px;
             overflow: hidden;
@@ -325,7 +394,7 @@
 
         .progress-bar {
             height: 100%;
-            background: #3b82f6;
+            background: var(--accent);
             border-radius: 8px;
             transition: width 0.3s;
             width: 0%;
@@ -333,7 +402,7 @@
 
         .progress-text {
             font-size: 13px;
-            color: #94a3b8;
+            color: var(--text-muted);
             text-align: center;
         }
 
@@ -344,7 +413,7 @@
             align-items: center;
             justify-content: space-between;
             padding: 12px 16px;
-            background: #0f172a;
+            background: var(--bg);
             border-radius: 10px;
             margin-bottom: 8px;
             gap: 12px;
@@ -352,7 +421,7 @@
 
         .bulk-result-url {
             font-size: 14px;
-            color: #cbd5e1;
+            color: var(--text-sub);
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
@@ -369,7 +438,7 @@
 
         .bulk-result-version {
             font-size: 12px;
-            color: #94a3b8;
+            color: var(--text-muted);
         }
 
         .bulk-badge {
@@ -406,24 +475,24 @@
         .bulk-summary-item {
             text-align: center;
             padding: 12px 20px;
-            background: #0f172a;
+            background: var(--bg);
             border-radius: 10px;
             cursor: pointer;
             transition: outline 0.2s, transform 0.15s;
         }
 
         .bulk-summary-item:hover { transform: scale(1.05); }
-        .bulk-summary-item.selected { outline: 2px solid #f8fafc; }
+        .bulk-summary-item.selected { outline: 2px solid var(--text-bright); }
 
         .bulk-summary-count {
             font-size: 24px;
             font-weight: 700;
-            color: #f8fafc;
+            color: var(--text-bright);
         }
 
         .bulk-summary-label {
             font-size: 12px;
-            color: #94a3b8;
+            color: var(--text-muted);
             margin-top: 2px;
         }
 
@@ -434,7 +503,7 @@
         .bulk-detail-toggle {
             background: none;
             border: none;
-            color: #3b82f6;
+            color: var(--accent);
             cursor: pointer;
             font-size: 12px;
             padding: 4px 8px;
@@ -445,7 +514,7 @@
         .bulk-result-details {
             display: none;
             padding: 12px 16px;
-            background: #1a2536;
+            background: var(--result-details-bg);
             border-radius: 0 0 10px 10px;
             margin-top: -8px;
             margin-bottom: 8px;
@@ -458,25 +527,41 @@
             display: flex;
             justify-content: space-between;
             padding: 3px 0;
-            color: #94a3b8;
+            color: var(--text-muted);
         }
 
-        .bulk-detail-row .val { color: #cbd5e1; }
+        .bulk-detail-row .val { color: var(--text-sub); }
 
-        .export-btn {
-            background: #334155;
+        .bulk-actions-row {
+            display: flex;
+            gap: 8px;
+            justify-content: center;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
+
+        .action-btn {
+            background: var(--btn-secondary-bg);
             font-size: 13px;
             padding: 10px 20px;
+            color: var(--text);
         }
 
-        .export-btn:hover { background: #475569; }
+        .action-btn:hover { background: var(--btn-secondary-hover); }
+
+        .action-btn.retry-btn {
+            background: rgba(234, 179, 8, 0.15);
+            color: #eab308;
+        }
+
+        .action-btn.retry-btn:hover { background: rgba(234, 179, 8, 0.25); }
 
         /* Sub-tabs */
         .sub-tabs {
             display: flex;
             gap: 4px;
             margin-bottom: 16px;
-            background: #0f172a;
+            background: var(--bg);
             border-radius: 8px;
             padding: 3px;
         }
@@ -487,7 +572,7 @@
             border: none;
             border-radius: 6px;
             background: transparent;
-            color: #94a3b8;
+            color: var(--text-muted);
             font-size: 13px;
             font-weight: 500;
             cursor: pointer;
@@ -495,18 +580,18 @@
         }
 
         .sub-tab.active {
-            background: #334155;
-            color: #f8fafc;
+            background: var(--btn-secondary-bg);
+            color: var(--text-bright);
         }
 
-        .sub-tab:not(.active):hover { color: #e2e8f0; }
+        .sub-tab:not(.active):hover { color: var(--text); }
 
         .sub-tab-content { display: none; }
         .sub-tab-content.active { display: block; }
 
         /* Upload area */
         .upload-area {
-            border: 2px dashed #334155;
+            border: 2px dashed var(--border);
             border-radius: 10px;
             padding: 32px 20px;
             text-align: center;
@@ -516,24 +601,24 @@
         }
 
         .upload-area:hover, .upload-area.dragover {
-            border-color: #3b82f6;
+            border-color: var(--accent);
             background: rgba(59, 130, 246, 0.05);
         }
 
         .upload-icon { font-size: 32px; margin-bottom: 8px; }
-        .upload-text { font-size: 14px; color: #cbd5e1; margin-bottom: 4px; }
-        .upload-hint { font-size: 12px; color: #64748b; }
+        .upload-text { font-size: 14px; color: var(--text-sub); margin-bottom: 4px; }
+        .upload-hint { font-size: 12px; color: var(--text-dim); }
 
         .file-info {
             display: flex;
             align-items: center;
             gap: 10px;
             padding: 10px 14px;
-            background: #0f172a;
+            background: var(--bg);
             border-radius: 8px;
             margin-bottom: 12px;
             font-size: 13px;
-            color: #cbd5e1;
+            color: var(--text-sub);
         }
 
         .file-info #fileName {
@@ -543,18 +628,121 @@
             white-space: nowrap;
         }
 
-        .file-info #fileUrlCount { color: #94a3b8; white-space: nowrap; }
+        .file-info #fileUrlCount { color: var(--text-muted); white-space: nowrap; }
+
+        /* History */
+        .history-section { margin-top: 20px; }
+
+        .history-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 14px;
+            background: var(--bg);
+            border-radius: 8px;
+            margin-bottom: 6px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+
+        .history-item:hover { background: var(--btn-secondary-bg); }
+
+        .history-url {
+            color: var(--text-sub);
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            min-width: 0;
+        }
+
+        .history-meta {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+
+        .history-time {
+            color: var(--text-dim);
+            font-size: 11px;
+        }
+
+        .history-badge {
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .history-badge.wp { background: rgba(34, 197, 94, 0.15); color: #22c55e; }
+        .history-badge.not-wp { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+
+        .history-clear {
+            background: none;
+            border: none;
+            color: var(--text-dim);
+            cursor: pointer;
+            font-size: 12px;
+            padding: 4px 8px;
+        }
+
+        .history-clear:hover { color: #ef4444; }
+
+        .history-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .history-empty {
+            text-align: center;
+            color: var(--text-dim);
+            font-size: 13px;
+            padding: 16px;
+        }
+
+        /* Toast notification */
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%) translateY(100px);
+            background: var(--text-bright);
+            color: var(--bg);
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 500;
+            opacity: 0;
+            transition: transform 0.3s, opacity 0.3s;
+            z-index: 1000;
+            pointer-events: none;
+        }
+
+        .toast.show {
+            transform: translateX(-50%) translateY(0);
+            opacity: 1;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="card">
-            <h1>WordPress Detector</h1>
+            <div class="header">
+                <h1>WordPress Detector</h1>
+                <button class="theme-toggle" onclick="toggleTheme()" title="Toggle light/dark mode">
+                    <span id="themeIcon">&#9788;</span>
+                </button>
+            </div>
             <p class="subtitle">Check if websites run on WordPress</p>
 
             <div class="tabs">
                 <button class="tab active" onclick="switchTab('single')">Single URL</button>
                 <button class="tab" onclick="switchTab('bulk')">Bulk Check</button>
+                <button class="tab" onclick="switchTab('history')">History</button>
             </div>
 
             <!-- Single URL Tab -->
@@ -636,24 +824,71 @@
 
                 <div id="bulkResultsContainer" style="display:none">
                     <div class="bulk-summary" id="bulkSummary"></div>
-                    <div style="text-align:center; margin-bottom: 16px;">
-                        <button class="export-btn" onclick="exportCSV()">Export CSV</button>
+                    <div class="bulk-actions-row" id="bulkActionsRow">
+                        <button class="action-btn" onclick="exportCSV()">Export CSV</button>
+                        <button class="action-btn" onclick="copyResults()">Copy Results</button>
+                        <button class="action-btn retry-btn" id="retryErrorsBtn" onclick="retryErrors()" style="display:none">Retry Errors</button>
                     </div>
                     <div class="bulk-results" id="bulkResults"></div>
                 </div>
             </div>
+
+            <!-- History Tab -->
+            <div class="tab-content" id="tab-history">
+                <div class="history-header">
+                    <div class="details-title" style="border:none;margin:0;padding:0">Scan History</div>
+                    <button class="history-clear" onclick="clearHistory()">Clear All</button>
+                </div>
+                <div id="historyList"></div>
+            </div>
         </div>
     </div>
 
+    <div class="toast" id="toast"></div>
+
     <script>
         const PROXY = 'https://api.allorigins.win/raw?url=';
+
+        // --- Theme toggle ---
+        function toggleTheme() {
+            const html = document.documentElement;
+            const current = html.getAttribute('data-theme');
+            const next = current === 'dark' ? 'light' : 'dark';
+            html.setAttribute('data-theme', next);
+            localStorage.setItem('wp-detector-theme', next);
+            updateThemeIcon(next);
+        }
+
+        function updateThemeIcon(theme) {
+            document.getElementById('themeIcon').innerHTML = theme === 'dark' ? '&#9788;' : '&#9790;';
+        }
+
+        // Load saved theme
+        (function() {
+            const saved = localStorage.getItem('wp-detector-theme');
+            if (saved) {
+                document.documentElement.setAttribute('data-theme', saved);
+                updateThemeIcon(saved);
+            }
+        })();
+
+        // --- Toast ---
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            toast.textContent = msg;
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 2000);
+        }
 
         // --- Tab switching ---
         function switchTab(tab) {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
             document.querySelector(`.tab-content#tab-${tab}`).classList.add('active');
-            document.querySelectorAll('.tab')[tab === 'single' ? 0 : 1].classList.add('active');
+            const tabs = document.querySelectorAll('.tab');
+            const idx = tab === 'single' ? 0 : tab === 'bulk' ? 1 : 2;
+            tabs[idx].classList.add('active');
+            if (tab === 'history') renderHistory();
         }
 
         function switchSubTab(tab) {
@@ -696,7 +931,6 @@
             const urls = [];
             const lines = text.split(/\r?\n/);
             for (const line of lines) {
-                // Split by comma, tab, or semicolon
                 const cells = line.split(/[,;\t]/);
                 for (const cell of cells) {
                     const cleaned = cell.trim().replace(/^["']|["']$/g, '');
@@ -707,11 +941,9 @@
         }
 
         function parseExcelForUrls(data) {
-            // Simple XLSX parser — extract shared strings and look for URLs
             const urls = [];
             try {
                 const text = new TextDecoder('utf-8', { fatal: false }).decode(data);
-                // Extract anything that looks like a URL from the raw XML
                 const matches = text.matchAll(/(?:https?:\/\/)?(?:www\.)?([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}[^\s<>"',;)}\]]*?(?=[<"'\s,;)}\]]|$)/gi);
                 for (const m of matches) {
                     const cleaned = m[0].trim();
@@ -812,7 +1044,6 @@
             let theme = null;
             let plugins = new Set();
 
-            // Fetch homepage first (needed for HTML analysis)
             const html = await fetchText(baseUrl.origin);
 
             // 1. Meta generator tag
@@ -843,25 +1074,20 @@
 
             // Run all endpoint checks in parallel
             const [loginResult, apiResult, xmlrpcResult, feedResult, readmeResult] = await Promise.allSettled([
-                // 6. wp-login.php
                 proxyFetch(baseUrl.origin + '/wp-login.php')
                     .then(r => r.text())
                     .then(t => /user_login/i.test(t) && /wp-submit/i.test(t)),
 
-                // 7. REST API
                 fetchText(baseUrl.origin + '/wp-json/')
                     .then(t => { const d = JSON.parse(t); return !!(d && (d.name || d.namespaces)); }),
 
-                // 8. XML-RPC
                 proxyFetch(baseUrl.origin + '/xmlrpc.php')
                     .then(r => r.text())
                     .then(t => /xml-rpc server accepts post requests only/i.test(t)),
 
-                // RSS feed for version
                 fetchText(baseUrl.origin + '/feed/')
                     .then(t => { const m = t.match(/generator>https?:\/\/wordpress\.org\/\?v=([\d.]+)</i); return m ? m[1] : null; }),
 
-                // readme.html for version
                 fetchText(baseUrl.origin + '/readme.html')
                     .then(t => {
                         const m = t.match(/wordpress[^<]*?version\s*([\d.]+)/i) || t.match(/<br\s*\/?\s*>\s*version\s*([\d.]+)/i);
@@ -873,7 +1099,6 @@
             checks['REST API (/wp-json/)'] = apiResult.status === 'fulfilled' && apiResult.value;
             checks['XML-RPC'] = xmlrpcResult.status === 'fulfilled' && xmlrpcResult.value;
 
-            // Version from RSS feed (preferred), then readme.html fallback
             if (!version && feedResult.status === 'fulfilled' && feedResult.value) {
                 version = feedResult.value;
             }
@@ -885,7 +1110,6 @@
 
             const passed = Object.values(checks).filter(Boolean).length;
             const total = Object.keys(checks).length;
-            // Strong signals: content-based checks from the homepage HTML
             const strongSignals = [
                 checks['Meta Generator Tag'],
                 checks['wp-content/wp-includes Paths'],
@@ -893,7 +1117,6 @@
                 checks['Theme Detected'],
                 checks['REST API (/wp-json/)']
             ].filter(Boolean).length;
-            // Require at least 1 strong signal, or 3+ total checks passed
             const isWordPress = (strongSignals >= 1 && passed >= 2) || passed >= 3;
             const confidence = Math.round((passed / total) * 100);
 
@@ -906,6 +1129,59 @@
                 theme,
                 plugins: [...plugins]
             };
+        }
+
+        // --- Scan history ---
+        function saveToHistory(result) {
+            const history = JSON.parse(localStorage.getItem('wp-detector-history') || '[]');
+            history.unshift({
+                url: result.url,
+                isWordPress: result.isWordPress,
+                version: result.version,
+                theme: result.theme,
+                timestamp: Date.now()
+            });
+            // Keep last 50 entries
+            if (history.length > 50) history.length = 50;
+            localStorage.setItem('wp-detector-history', JSON.stringify(history));
+        }
+
+        function renderHistory() {
+            const history = JSON.parse(localStorage.getItem('wp-detector-history') || '[]');
+            const container = document.getElementById('historyList');
+
+            if (history.length === 0) {
+                container.innerHTML = '<div class="history-empty">No scans yet. Your scan results will appear here.</div>';
+                return;
+            }
+
+            container.innerHTML = history.map((item, i) => {
+                const date = new Date(item.timestamp);
+                const timeStr = date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                const badge = item.isWordPress ? 'wp' : 'not-wp';
+                const badgeText = item.isWordPress ? 'WP' : 'Not WP';
+                const version = item.isWordPress && item.version ? ` v${item.version}` : '';
+
+                return `<div class="history-item" onclick="scanFromHistory('${item.url}')">
+                    <span class="history-url">${item.url}</span>
+                    <div class="history-meta">
+                        <span class="history-time">${timeStr}</span>
+                        <span class="history-badge ${badge}">${badgeText}${version}</span>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        function scanFromHistory(url) {
+            document.getElementById('urlInput').value = url;
+            switchTab('single');
+            scan();
+        }
+
+        function clearHistory() {
+            localStorage.removeItem('wp-detector-history');
+            renderHistory();
+            showToast('History cleared');
         }
 
         // --- Single scan ---
@@ -937,6 +1213,7 @@
                 const result = await detectWordPress(input);
                 const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
                 result.scanTime = elapsed;
+                saveToHistory(result);
                 displayResults(result.isWordPress, result.confidence, result.checks, result.version, result.theme, result.plugins, elapsed);
             } catch (err) {
                 showError('errorMsg', 'Could not fetch the website. Make sure the URL is correct and the site is accessible.');
@@ -1037,17 +1314,15 @@
             bulkResultsData = [];
 
             let completed = 0;
-            const CONCURRENCY = 3; // Scan 3 URLs at a time
+            const CONCURRENCY = 3;
             const bulkStartTime = Date.now();
             const bulkTimerInterval = setInterval(() => {
                 const elapsed = ((Date.now() - bulkStartTime) / 1000).toFixed(1);
-                progressText.textContent = `Scanning ${Math.min(completed + 1, urls.length)} / ${urls.length} — ${elapsed}s`;
+                progressText.textContent = `Scanning ${Math.min(completed + 1, urls.length)} / ${urls.length} \u2014 ${elapsed}s`;
             }, 100);
 
-            // Use more resilient settings for bulk mode
             fetchOptions = { retries: 2, timeoutMs: 30000, retryDelay: 2000 };
 
-            // Process URLs in batches of CONCURRENCY
             for (let i = 0; i < urls.length; i += CONCURRENCY) {
                 const batch = urls.slice(i, i + CONCURRENCY);
 
@@ -1086,24 +1361,27 @@
                     };
                     bulkResultsData.push(result);
                     appendBulkResult(result, resultsEl);
+                    saveToHistory(result);
                     completed++;
                 }
 
                 progressBar.style.width = `${(completed / urls.length) * 100}%`;
 
-                // Small delay between batches to avoid overwhelming the proxy
                 if (i + CONCURRENCY < urls.length) await delay(1000);
             }
 
-            // Reset to default settings
             fetchOptions = { retries: 2, timeoutMs: 30000, retryDelay: 2000 };
             clearInterval(bulkTimerInterval);
 
             const totalElapsed = ((Date.now() - bulkStartTime) / 1000).toFixed(1);
-            progressText.textContent = `Done — ${completed} / ${urls.length} in ${totalElapsed}s`;
+            progressText.textContent = `Done \u2014 ${completed} / ${urls.length} in ${totalElapsed}s`;
             btn.disabled = false;
 
-            // Show summary
+            showBulkSummary();
+            container.style.display = 'block';
+        }
+
+        function showBulkSummary() {
             const wpCount = bulkResultsData.filter(r => r.isWordPress).length;
             const notWpCount = bulkResultsData.filter(r => !r.isWordPress && !r.error).length;
             const errCount = bulkResultsData.filter(r => r.error).length;
@@ -1123,7 +1401,81 @@
                 </div>
             `;
 
-            container.style.display = 'block';
+            document.getElementById('retryErrorsBtn').style.display = errCount > 0 ? '' : 'none';
+        }
+
+        async function retryErrors() {
+            const errorIndices = [];
+            bulkResultsData.forEach((r, i) => { if (r.error) errorIndices.push(i); });
+
+            if (errorIndices.length === 0) return;
+
+            const btn = document.getElementById('retryErrorsBtn');
+            const progressEl = document.getElementById('bulkProgress');
+            const progressBar = document.getElementById('progressBar');
+            const progressText = document.getElementById('progressText');
+
+            btn.disabled = true;
+            btn.textContent = 'Retrying...';
+            progressEl.classList.add('active');
+
+            let completed = 0;
+            const total = errorIndices.length;
+            const CONCURRENCY = 3;
+            const startTime = Date.now();
+            const timerInterval = setInterval(() => {
+                const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+                progressText.textContent = `Retrying ${Math.min(completed + 1, total)} / ${total} errors \u2014 ${elapsed}s`;
+            }, 100);
+
+            fetchOptions = { retries: 3, timeoutMs: 30000, retryDelay: 2500 };
+
+            for (let i = 0; i < errorIndices.length; i += CONCURRENCY) {
+                const batch = errorIndices.slice(i, i + CONCURRENCY);
+
+                progressBar.style.width = `${(completed / total) * 100}%`;
+
+                const batchResults = await Promise.allSettled(
+                    batch.map(async (idx) => {
+                        try {
+                            const result = await detectWordPress(bulkResultsData[idx].url);
+                            return { idx, result };
+                        } catch {
+                            return { idx, result: null };
+                        }
+                    })
+                );
+
+                for (const settled of batchResults) {
+                    if (settled.status === 'fulfilled' && settled.value.result) {
+                        const { idx, result } = settled.value;
+                        bulkResultsData[idx] = result;
+                        saveToHistory(result);
+                    }
+                    completed++;
+                }
+
+                progressBar.style.width = `${(completed / total) * 100}%`;
+                if (i + CONCURRENCY < errorIndices.length) await delay(1500);
+            }
+
+            fetchOptions = { retries: 2, timeoutMs: 30000, retryDelay: 2000 };
+            clearInterval(timerInterval);
+
+            const totalElapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+            progressText.textContent = `Retry done in ${totalElapsed}s`;
+
+            // Re-render all results
+            const resultsEl = document.getElementById('bulkResults');
+            resultsEl.innerHTML = '';
+            activeFilter = null;
+            for (const result of bulkResultsData) {
+                appendBulkResult(result, resultsEl);
+            }
+
+            showBulkSummary();
+            btn.disabled = false;
+            btn.textContent = 'Retry Errors';
         }
 
         function appendBulkResult(result, container) {
@@ -1142,7 +1494,6 @@
             }
 
             const versionText = result.version ? `v${result.version}` : '';
-            const themeText = result.theme ? result.theme : '';
 
             let detailsHtml = '';
             if (!result.error) {
@@ -1174,7 +1525,6 @@
             const details = document.querySelectorAll('#bulkResults .bulk-result-details');
             const summaryItems = document.querySelectorAll('.bulk-summary-item');
 
-            // Toggle off if clicking the same filter
             if (activeFilter === type) {
                 activeFilter = null;
                 summaryItems.forEach(s => s.classList.remove('selected'));
@@ -1199,6 +1549,32 @@
             document.getElementById(id).classList.toggle('active');
         }
 
+        // --- Copy results ---
+        function copyResults() {
+            if (bulkResultsData.length === 0) return;
+
+            const lines = bulkResultsData.map(r => {
+                const status = r.error ? 'Error' : (r.isWordPress ? 'WordPress' : 'Not WordPress');
+                const version = r.version ? ` (v${r.version})` : '';
+                const theme = r.theme ? ` [${r.theme}]` : '';
+                return `${r.url} - ${status}${version}${theme}`;
+            });
+
+            const text = lines.join('\n');
+            navigator.clipboard.writeText(text).then(() => {
+                showToast('Results copied to clipboard');
+            }).catch(() => {
+                // Fallback
+                const ta = document.createElement('textarea');
+                ta.value = text;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+                showToast('Results copied to clipboard');
+            });
+        }
+
         function clearBulk() {
             document.getElementById('bulkInput').value = '';
             document.getElementById('bulkResults').innerHTML = '';
@@ -1206,6 +1582,7 @@
             document.getElementById('bulkProgress').classList.remove('active');
             document.getElementById('bulkErrorMsg').classList.remove('active');
             bulkResultsData = [];
+            activeFilter = null;
             clearFile();
         }
 
