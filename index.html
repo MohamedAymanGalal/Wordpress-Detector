@@ -1402,6 +1402,29 @@
             return { score, findings, isWordPress: false };
         }
 
+        // --- Page builder detection ---
+        function detectPageBuilder(html) {
+            // Check HTML signatures for known page builders
+            if (/class=["'][^"']*elementor/i.test(html) || /data-elementor/i.test(html) || /\/elementor\//i.test(html)) return 'Elementor';
+            if (/class=["'][^"']*et_pb_/i.test(html) || /class=["'][^"']*et_builder/i.test(html) || /\/et-builder\//i.test(html) || /\/Divi\//i.test(html)) return 'Divi Builder';
+            if (/class=["'][^"']*fl-builder/i.test(html) || /class=["'][^"']*fl-row/i.test(html) || /\/bb-plugin\//i.test(html)) return 'Beaver Builder';
+            if (/class=["'][^"']*brz-/i.test(html) || /\/brizy\//i.test(html)) return 'Brizy';
+            if (/class=["'][^"']*vc_row/i.test(html) || /class=["'][^"']*wpb_/i.test(html) || /js_composer/i.test(html) || /\/visual-composer/i.test(html)) return 'WPBakery Page Builder';
+            if (/class=["'][^"']*ct-section/i.test(html) || /\/oxygen\//i.test(html) || /oxy-/i.test(html)) return 'Oxygen Builder';
+            if (/class=["'][^"']*siteorigin-panels/i.test(html) || /\/siteorigin-panels\//i.test(html)) return 'SiteOrigin Page Builder';
+            if (/class=["'][^"']*fusion-/i.test(html) || /\/fusion-builder\//i.test(html) || /class=["'][^"']*avada-/i.test(html)) return 'Avada (Fusion Builder)';
+            if (/class=["'][^"']*thrive/i.test(html) || /\/thrive-visual-editor\//i.test(html)) return 'Thrive Architect';
+            if (/data-bricks/i.test(html) || /class=["'][^"']*bricks-/i.test(html) || /\/bricks\//i.test(html)) return 'Bricks Builder';
+            if (/class=["'][^"']*sp-page-builder/i.test(html) || /\/sp-page-builder\//i.test(html)) return 'SP Page Builder';
+            if (/class=["'][^"']*zion/i.test(html) || /\/zionbuilder\//i.test(html)) return 'Zion Builder';
+            if (/\/generateblocks\//i.test(html) || /class=["'][^"']*gb-container/i.test(html)) return 'GenerateBlocks';
+            if (/class=["'][^"']*kadence-/i.test(html) || /\/kadence-blocks\//i.test(html)) return 'Kadence Blocks';
+            if (/class=["'][^"']*spectra-/i.test(html) || /\/spectra\//i.test(html) || /\/ultimate-addons-for-gutenberg\//i.test(html)) return 'Spectra (UAG)';
+            if (/class=["'][^"']*stackable-/i.test(html) || /\/stackable\//i.test(html)) return 'Stackable';
+            if (/class=["'][^"']*wp-block-/i.test(html) && !/elementor|fl-builder|vc_row|et_pb_/i.test(html)) return 'Gutenberg (Block Editor)';
+            return null;
+        }
+
         // --- Top 50 most popular plugins to probe ---
         const PLUGIN_PROBES = [
             'akismet','contact-form-7','woocommerce','elementor','wordfence','wordpress-seo',
@@ -1548,7 +1571,10 @@
             if (themes.size > 0) theme = [...themes][0];
             checks['Theme Detected'] = themes.size > 0;
 
-            // 5. Plugin detection — extract from HTML + scripts + classes
+            // 5. Page builder detection
+            const pageBuilder = detectPageBuilder(html);
+
+            // 6. Plugin detection — extract from HTML + scripts + classes
             const htmlPlugins = extractPluginsFromHtml(html);
             for (const p of htmlPlugins) plugins.add(p);
 
@@ -1643,6 +1669,7 @@
                 checks,
                 version,
                 theme,
+                pageBuilder,
                 plugins: [...plugins],
                 ssl,
                 security
@@ -1680,6 +1707,9 @@
             for (const m of themeMatches) themes.add(m[1]);
             if (themes.size > 0) theme = [...themes][0];
             checks['Theme Detected'] = themes.size > 0;
+
+            // Page builder detection
+            const pageBuilder = detectPageBuilder(html);
 
             // Extract plugins from HTML + scripts + classes
             const htmlPlugins = extractPluginsFromHtml(html);
@@ -1759,7 +1789,7 @@
                 security.score = security.findings.length > 0 ? Math.round(security.findings.reduce((s, f) => s + f.points, 0) / security.findings.reduce((s, f) => s + f.maxPoints, 0) * 100) : null;
             }
 
-            return { url: baseUrl.origin, isWordPress, confidence, checks, version, theme, plugins: [...plugins], ssl, security };
+            return { url: baseUrl.origin, isWordPress, confidence, checks, version, theme, pageBuilder, plugins: [...plugins], ssl, security };
         }
 
         // --- Share results ---
@@ -1772,6 +1802,7 @@
             const lines = [`${r.url} - ${status}`];
             if (r.version) lines.push(`Version: ${r.version}`);
             if (r.theme) lines.push(`Theme: ${r.theme}`);
+            if (r.pageBuilder) lines.push(`Page Builder: ${r.pageBuilder}`);
             if (r.plugins && r.plugins.length > 0) lines.push(`Plugins: ${r.plugins.join(', ')}`);
             if (r.ssl) {
                 const sslStatus = r.ssl.valid ? 'Valid' : 'Expired';
@@ -1819,6 +1850,7 @@
                 confidence: result.confidence,
                 version: result.version,
                 theme: result.theme,
+                pageBuilder: result.pageBuilder || null,
                 plugins: result.plugins || [],
                 checks: result.checks || {},
                 ssl: result.ssl || null,
@@ -1867,7 +1899,7 @@
             // Show saved results directly without re-scanning
             if (item.checks && Object.keys(item.checks).length > 0) {
                 lastScanResult = item;
-                displayResults(item.isWordPress, item.confidence, item.checks, item.version, item.theme, item.plugins || [], null, item.ssl || null, item.security || null);
+                displayResults(item.isWordPress, item.confidence, item.checks, item.version, item.theme, item.pageBuilder || null, item.plugins || [], null, item.ssl || null, item.security || null);
                 if (item.isWordPress) {
                     fetchPageSpeed(item.url).then(psi => renderPageSpeed(psi));
                 }
@@ -1973,7 +2005,7 @@
                 result.scanTime = elapsed;
                 saveToHistory(result);
                 lastScanResult = result;
-                displayResults(result.isWordPress, result.confidence, result.checks, result.version, result.theme, result.plugins, elapsed, result.ssl, result.security);
+                displayResults(result.isWordPress, result.confidence, result.checks, result.version, result.theme, result.pageBuilder, result.plugins, elapsed, result.ssl, result.security);
 
                 // Fetch PageSpeed in background for WordPress sites
                 if (result.isWordPress) {
@@ -2010,7 +2042,7 @@
             el.classList.add('active');
         }
 
-        function displayResults(isWordPress, confidence, checks, version, theme, plugins, scanTime, ssl, security) {
+        function displayResults(isWordPress, confidence, checks, version, theme, pageBuilder, plugins, scanTime, ssl, security) {
             const results = document.getElementById('results');
             const verdict = document.getElementById('verdict');
             const verdictText = document.getElementById('verdictText');
@@ -2024,13 +2056,16 @@
             const infoRows = document.getElementById('infoRows');
             infoRows.innerHTML = '';
 
-            if (version || theme) {
+            if (version || theme || pageBuilder) {
                 infoSection.style.display = 'block';
                 if (version) {
                     infoRows.innerHTML += `<div class="detail-row"><span class="label">WordPress Version</span><span class="value">${version}</span></div>`;
                 }
                 if (theme) {
                     infoRows.innerHTML += `<div class="detail-row"><span class="label">Active Theme</span><span class="value">${theme}</span></div>`;
+                }
+                if (pageBuilder) {
+                    infoRows.innerHTML += `<div class="detail-row"><span class="label">Page Builder</span><span class="value">${pageBuilder}</span></div>`;
                 }
             } else {
                 infoSection.style.display = 'none';
@@ -2349,6 +2384,7 @@
                 detailsHtml = `<div class="bulk-result-details" id="${id}">`;
                 if (result.version) detailsHtml += `<div class="bulk-detail-row"><span>Version</span><span class="val">${result.version}</span></div>`;
                 if (result.theme) detailsHtml += `<div class="bulk-detail-row"><span>Theme</span><span class="val">${result.theme}</span></div>`;
+                if (result.pageBuilder) detailsHtml += `<div class="bulk-detail-row"><span>Page Builder</span><span class="val">${result.pageBuilder}</span></div>`;
                 if (result.ssl) {
                     const sslClass = result.ssl.valid ? (result.ssl.daysLeft != null && result.ssl.daysLeft < 30 ? 'expiring' : 'valid') : 'expired';
                     const sslLabel = result.ssl.valid ? (result.ssl.daysLeft != null && result.ssl.daysLeft < 30 ? 'Expiring Soon' : 'Valid') : 'Expired';
