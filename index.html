@@ -1137,12 +1137,16 @@
 
         // --- Scan history ---
         function saveToHistory(result) {
+            if (result.error) return; // Don't save errors to history
             const history = JSON.parse(localStorage.getItem('wp-detector-history') || '[]');
             history.unshift({
                 url: result.url,
                 isWordPress: result.isWordPress,
+                confidence: result.confidence,
                 version: result.version,
                 theme: result.theme,
+                plugins: result.plugins || [],
+                checks: result.checks || {},
                 timestamp: Date.now()
             });
             // Keep last 50 entries
@@ -1166,7 +1170,7 @@
                 const badgeText = item.isWordPress ? 'WP' : 'Not WP';
                 const version = item.isWordPress && item.version ? ` v${item.version}` : '';
 
-                return `<div class="history-item" onclick="scanFromHistory('${item.url}')">
+                return `<div class="history-item" onclick="showFromHistory(${i})">
                     <span class="history-url">${item.url}</span>
                     <div class="history-meta">
                         <span class="history-time">${timeStr}</span>
@@ -1176,10 +1180,21 @@
             }).join('');
         }
 
-        function scanFromHistory(url) {
-            document.getElementById('urlInput').value = url;
+        function showFromHistory(index) {
+            const history = JSON.parse(localStorage.getItem('wp-detector-history') || '[]');
+            const item = history[index];
+            if (!item) return;
+
+            document.getElementById('urlInput').value = item.url;
             switchTab('single');
-            scan();
+
+            // Show saved results directly without re-scanning
+            if (item.checks && Object.keys(item.checks).length > 0) {
+                displayResults(item.isWordPress, item.confidence, item.checks, item.version, item.theme, item.plugins || [], null);
+            } else {
+                // Old history entry without checks — re-scan
+                scan();
+            }
         }
 
         function clearHistory() {
