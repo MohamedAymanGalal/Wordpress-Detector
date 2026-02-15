@@ -847,7 +847,10 @@
     <div class="toast" id="toast"></div>
 
     <script>
-        const PROXY = 'https://api.allorigins.win/raw?url=';
+        const PROXIES = [
+            { url: 'https://api.allorigins.win/raw?url=', encode: true },
+            { url: 'https://api.codetabs.com/v1/proxy/?quest=', encode: false }
+        ];
 
         // --- Theme toggle ---
         function toggleTheme() {
@@ -1002,29 +1005,36 @@
         async function proxyFetch(url, retries, timeoutMs) {
             const maxRetries = retries !== undefined ? retries : fetchOptions.retries;
             const timeout = timeoutMs !== undefined ? timeoutMs : fetchOptions.timeoutMs;
+            let lastErr;
 
-            for (let i = 0; i <= maxRetries; i++) {
-                try {
-                    const controller = new AbortController();
-                    const timer = setTimeout(() => controller.abort(), timeout);
-                    const resp = await fetch(PROXY + encodeURIComponent(url), { signal: controller.signal });
-                    clearTimeout(timer);
-                    if (!resp.ok) {
-                        if (i < maxRetries && (resp.status === 429 || resp.status >= 500)) {
+            for (const proxy of PROXIES) {
+                const proxyUrl = proxy.url + (proxy.encode ? encodeURIComponent(url) : url);
+                for (let i = 0; i <= maxRetries; i++) {
+                    try {
+                        const controller = new AbortController();
+                        const timer = setTimeout(() => controller.abort(), timeout);
+                        const resp = await fetch(proxyUrl, { signal: controller.signal });
+                        clearTimeout(timer);
+                        if (!resp.ok) {
+                            lastErr = new Error(`HTTP ${resp.status}`);
+                            if (i < maxRetries && (resp.status === 429 || resp.status >= 500)) {
+                                await delay(fetchOptions.retryDelay * (i + 1));
+                                continue;
+                            }
+                            break; // Try next proxy
+                        }
+                        return resp;
+                    } catch (err) {
+                        lastErr = err;
+                        if (i < maxRetries) {
                             await delay(fetchOptions.retryDelay * (i + 1));
                             continue;
                         }
-                        throw new Error(`HTTP ${resp.status}`);
+                        break; // Try next proxy
                     }
-                    return resp;
-                } catch (err) {
-                    if (i < maxRetries) {
-                        await delay(fetchOptions.retryDelay * (i + 1));
-                        continue;
-                    }
-                    throw err;
                 }
             }
+            throw lastErr || new Error('All proxies failed');
         }
 
         async function fetchText(url) {
