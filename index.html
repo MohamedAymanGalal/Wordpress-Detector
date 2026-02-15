@@ -1402,104 +1402,43 @@
             return { score, findings, isWordPress: false };
         }
 
-        // --- Popular plugin signatures for probing ---
-        // Each entry: [slug, readme path or known asset path]
+        // --- Top 50 most popular plugins to probe ---
         const PLUGIN_PROBES = [
-            'akismet','contact-form-7','woocommerce','elementor','wordfence','yoast-seo','wordpress-seo',
+            'akismet','contact-form-7','woocommerce','elementor','wordfence','wordpress-seo',
             'jetpack','wpforms-lite','classic-editor','really-simple-ssl','all-in-one-seo-pack',
-            'google-analytics-for-wordpress','monsterinsights','updraftplus','duplicate-post',
-            'litespeed-cache','wp-super-cache','w3-total-cache','wp-fastest-cache','autoptimize',
-            'wp-mail-smtp','redirection','regenerate-thumbnails','broken-link-checker',
-            'google-sitemap-generator','limit-login-attempts-reloaded','loginizer',
-            'sucuri-scanner','ithemes-security','all-in-one-wp-security-and-firewall',
-            'better-wp-security','wp-security-audit-log','wp-cerber','defender-security',
-            'advanced-custom-fields','custom-post-type-ui','meta-box','pods',
-            'wps-hide-login','two-factor','google-authenticator',
-            'mailchimp-for-wp','newsletter','email-subscribers',
-            'tablepress','ninja-tables','wpforms','formidable',
-            'gravity-forms','caldera-forms','wp-file-manager',
-            'coming-soon','under-construction-page','maintenance',
-            'wp-optimize','wp-rocket','perfmatters','sg-cachepress',
-            'shortpixel-image-optimiser','imagify','smush','ewww-image-optimizer','wp-smushit',
-            'lazy-load','a3-lazy-load',
-            'tinymce-advanced','classic-widgets','gutenberg',
-            'seo-by-rank-math','rank-math-seo','schema-and-structured-data-for-wp',
-            'amp','accelerated-mobile-pages','fb-instant-articles',
-            'wordpress-importer','all-in-one-wp-migration','duplicator',
-            'woocommerce-payments','woocommerce-gateway-stripe','woo-gutenberg-products-block',
-            'mailpoet','popup-maker','optinmonster','sumo',
-            'cookie-notice','complianz-gdpr','gdpr-cookie-compliance','cookie-law-info',
-            'wp-gdpr-compliance','iubenda-cookie-law-solution',
-            'polylang','translatepress-multilingual','loco-translate','wpml-string-translation',
-            'buddypress','bbpress','ultimate-member',
-            'easy-digital-downloads','restrict-content',
-            'beaver-builder-lite-version','brizy','divi-builder','fusion-builder',
-            'siteorigin-panels','visual-composer-website-builder','js_composer',
-            'insert-headers-and-footers','header-footer-code-manager',
-            'velvet-blues-update-urls','better-search-replace',
-            'disable-comments','disable-gutenberg','disable-emojis',
-            'site-kit-by-google','google-analytics-dashboard-for-wp',
-            'smart-slider-3','slider-revolution','meta-slider',
-            'nextgen-gallery','envira-gallery-lite','modula-best-grid-gallery',
-            'photo-gallery','robo-gallery','flavflavor',
-            'social-warfare','social-snap','shareaholic','addtoany',
-            'wordpress-popup','hustle','bloom',
-            'wp-crontrol','advanced-cron-manager',
-            'query-monitor','debug-bar','health-check',
-            'custom-css-js','simple-custom-css','my-custom-css',
-            'safe-svg','svg-support','enable-media-replace',
-            'members','user-role-editor','capability-manager-enhanced',
-            'wp-migrate-db','backwpup','blogvault-real-time-backup',
-            'updraftplus','backup-backup','xcloner-backup-and-restore',
-            'woocommerce-pdf-invoices-packing-slips','flexible-shipping',
-            'one-click-demo-import','starter-templates','astra-sites',
-            'kadence-blocks','spectra','stackable-ultimate-gutenberg-blocks',
-            'ultimate-addons-for-gutenberg','generateblocks','coblocks',
-            'elementor-pro','premium-addons-for-elementor','essential-addons-for-elementor-lite',
-            'powerpack-lite-for-elementor','header-footer-elementor',
-            'happy-elementor-addons','jetsticky-for-elementor',
-            'woolentor-addons','shopready-starter','cart-for-woocommerce',
-            'woo-variation-swatches','variation-swatches-for-woocommerce',
-            'product-import-export-for-woo','woo-discount-rules',
-            'advanced-woo-search','yith-woocommerce-wishlist','ti-woocommerce-wishlist',
-            'woo-cart-abandonment-recovery','retainful-next-order-coupon-for-woocommerce',
-            'pixelyoursite','facebook-for-woocommerce','pinterest-for-woocommerce',
-            'klarna-checkout-for-woocommerce','mollie-payments-for-woocommerce',
-            'checkout-field-editor-for-woocommerce','woocommerce-checkout-manager',
-            'wc-multivendor-marketplace','dokan-lite',
-            'wp-fastest-cache','cache-enabler','comet-cache',
-            'wp-statistics','slimstat','koko-analytics',
-            'custom-fonts','custom-typekit-fonts','easy-google-fonts',
-            'microthemer','jetelements','jetwoobuilder',
-            'ocean-extra','flavor','flavor-developer',
-            'astra-addon','generatepress-premium','flavor-starter',
-            'flavor-developer-starter',
+            'monsterinsights','updraftplus','litespeed-cache','wp-super-cache','w3-total-cache',
+            'wp-mail-smtp','redirection','limit-login-attempts-reloaded','sucuri-scanner',
+            'advanced-custom-fields','all-in-one-wp-security-and-firewall','mailchimp-for-wp',
+            'tablepress','wp-optimize','smush','ewww-image-optimizer','autoptimize',
+            'duplicate-post','seo-by-rank-math','cookie-notice','complianz-gdpr',
+            'all-in-one-wp-migration','duplicator','site-kit-by-google',
+            'woocommerce-payments','woocommerce-gateway-stripe','popup-maker',
+            'polylang','buddypress','bbpress','beaver-builder-lite-version',
+            'insert-headers-and-footers','nextgen-gallery','smart-slider-3',
+            'addtoany','user-role-editor','kadence-blocks','essential-addons-for-elementor-lite',
+            'header-footer-elementor','yith-woocommerce-wishlist',
         ];
 
         // Probe plugins by checking if their readme.txt exists
         async function probePlugins(baseOrigin, alreadyFound) {
             const found = new Set(alreadyFound);
             const toProbe = PLUGIN_PROBES.filter(slug => !found.has(slug));
-            const BATCH = 5;
-            for (let i = 0; i < toProbe.length; i += BATCH) {
-                const batch = toProbe.slice(i, i + BATCH);
-                const results = await Promise.allSettled(
-                    batch.map(slug =>
-                        proxyFetch(baseOrigin + '/wp-content/plugins/' + slug + '/readme.txt')
-                            .then(r => {
-                                if (!r.ok) throw new Error();
-                                return r.text();
-                            })
-                            .then(t => {
-                                // Verify it's a real plugin readme (contains === or Contributors or plugin name)
-                                if (/={2,}|contributors:|stable tag:|requires at least:/i.test(t)) return slug;
-                                throw new Error('not a readme');
-                            })
-                    )
-                );
-                for (const r of results) {
-                    if (r.status === 'fulfilled' && r.value) found.add(r.value);
-                }
+            const BATCH = 10;
+            const results = await Promise.allSettled(
+                toProbe.map(slug =>
+                    proxyFetch(baseOrigin + '/wp-content/plugins/' + slug + '/readme.txt')
+                        .then(r => {
+                            if (!r.ok) throw new Error();
+                            return r.text();
+                        })
+                        .then(t => {
+                            if (/={2,}|contributors:|stable tag:|requires at least:/i.test(t)) return slug;
+                            throw new Error('not a readme');
+                        })
+                )
+            );
+            for (const r of results) {
+                if (r.status === 'fulfilled' && r.value) found.add(r.value);
             }
             return found;
         }
@@ -1662,10 +1601,6 @@
             if (!version && readmeExposed) version = readmeResult.value;
 
             checks['Plugins Detected'] = plugins.size > 0;
-
-            // Probe popular plugins (runs in parallel batches)
-            const allPlugins = await probePlugins(baseUrl.origin, plugins);
-            for (const p of allPlugins) plugins.add(p);
 
             // Build security data
             const security = buildSecurityData({
