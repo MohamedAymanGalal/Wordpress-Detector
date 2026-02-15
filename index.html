@@ -1255,6 +1255,177 @@
             return { score, findings, isWordPress: false };
         }
 
+        // --- Popular plugin signatures for probing ---
+        // Each entry: [slug, readme path or known asset path]
+        const PLUGIN_PROBES = [
+            'akismet','contact-form-7','woocommerce','elementor','wordfence','yoast-seo','wordpress-seo',
+            'jetpack','wpforms-lite','classic-editor','really-simple-ssl','all-in-one-seo-pack',
+            'google-analytics-for-wordpress','monsterinsights','updraftplus','duplicate-post',
+            'litespeed-cache','wp-super-cache','w3-total-cache','wp-fastest-cache','autoptimize',
+            'wp-mail-smtp','redirection','regenerate-thumbnails','broken-link-checker',
+            'google-sitemap-generator','limit-login-attempts-reloaded','loginizer',
+            'sucuri-scanner','ithemes-security','all-in-one-wp-security-and-firewall',
+            'better-wp-security','wp-security-audit-log','wp-cerber','defender-security',
+            'advanced-custom-fields','custom-post-type-ui','meta-box','pods',
+            'wps-hide-login','two-factor','google-authenticator',
+            'mailchimp-for-wp','newsletter','email-subscribers',
+            'tablepress','ninja-tables','wpforms','formidable',
+            'gravity-forms','caldera-forms','wp-file-manager',
+            'coming-soon','under-construction-page','maintenance',
+            'wp-optimize','wp-rocket','perfmatters','sg-cachepress',
+            'shortpixel-image-optimiser','imagify','smush','ewww-image-optimizer','wp-smushit',
+            'lazy-load','a3-lazy-load',
+            'tinymce-advanced','classic-widgets','gutenberg',
+            'seo-by-rank-math','rank-math-seo','schema-and-structured-data-for-wp',
+            'amp','accelerated-mobile-pages','fb-instant-articles',
+            'wordpress-importer','all-in-one-wp-migration','duplicator',
+            'woocommerce-payments','woocommerce-gateway-stripe','woo-gutenberg-products-block',
+            'mailpoet','popup-maker','optinmonster','sumo',
+            'cookie-notice','complianz-gdpr','gdpr-cookie-compliance','cookie-law-info',
+            'wp-gdpr-compliance','iubenda-cookie-law-solution',
+            'polylang','translatepress-multilingual','loco-translate','wpml-string-translation',
+            'buddypress','bbpress','ultimate-member',
+            'easy-digital-downloads','restrict-content',
+            'beaver-builder-lite-version','brizy','divi-builder','fusion-builder',
+            'siteorigin-panels','visual-composer-website-builder','js_composer',
+            'insert-headers-and-footers','header-footer-code-manager',
+            'velvet-blues-update-urls','better-search-replace',
+            'disable-comments','disable-gutenberg','disable-emojis',
+            'site-kit-by-google','google-analytics-dashboard-for-wp',
+            'smart-slider-3','slider-revolution','meta-slider',
+            'nextgen-gallery','envira-gallery-lite','modula-best-grid-gallery',
+            'photo-gallery','robo-gallery','flavflavor',
+            'social-warfare','social-snap','shareaholic','addtoany',
+            'wordpress-popup','hustle','bloom',
+            'wp-crontrol','advanced-cron-manager',
+            'query-monitor','debug-bar','health-check',
+            'custom-css-js','simple-custom-css','my-custom-css',
+            'safe-svg','svg-support','enable-media-replace',
+            'members','user-role-editor','capability-manager-enhanced',
+            'wp-migrate-db','backwpup','blogvault-real-time-backup',
+            'updraftplus','backup-backup','xcloner-backup-and-restore',
+            'woocommerce-pdf-invoices-packing-slips','flexible-shipping',
+            'one-click-demo-import','starter-templates','astra-sites',
+            'kadence-blocks','spectra','stackable-ultimate-gutenberg-blocks',
+            'ultimate-addons-for-gutenberg','generateblocks','coblocks',
+            'elementor-pro','premium-addons-for-elementor','essential-addons-for-elementor-lite',
+            'powerpack-lite-for-elementor','header-footer-elementor',
+            'happy-elementor-addons','jetsticky-for-elementor',
+            'woolentor-addons','shopready-starter','cart-for-woocommerce',
+            'woo-variation-swatches','variation-swatches-for-woocommerce',
+            'product-import-export-for-woo','woo-discount-rules',
+            'advanced-woo-search','yith-woocommerce-wishlist','ti-woocommerce-wishlist',
+            'woo-cart-abandonment-recovery','retainful-next-order-coupon-for-woocommerce',
+            'pixelyoursite','facebook-for-woocommerce','pinterest-for-woocommerce',
+            'klarna-checkout-for-woocommerce','mollie-payments-for-woocommerce',
+            'checkout-field-editor-for-woocommerce','woocommerce-checkout-manager',
+            'wc-multivendor-marketplace','dokan-lite',
+            'wp-fastest-cache','cache-enabler','comet-cache',
+            'wp-statistics','slimstat','koko-analytics',
+            'custom-fonts','custom-typekit-fonts','easy-google-fonts',
+            'microthemer','jetelements','jetwoobuilder',
+            'ocean-extra','flavor','flavor-developer',
+            'astra-addon','generatepress-premium','flavor-starter',
+            'flavor-developer-starter',
+        ];
+
+        // Probe plugins by checking if their readme.txt exists
+        async function probePlugins(baseOrigin, alreadyFound) {
+            const found = new Set(alreadyFound);
+            const toProbe = PLUGIN_PROBES.filter(slug => !found.has(slug));
+            const BATCH = 5;
+            for (let i = 0; i < toProbe.length; i += BATCH) {
+                const batch = toProbe.slice(i, i + BATCH);
+                const results = await Promise.allSettled(
+                    batch.map(slug =>
+                        proxyFetch(baseOrigin + '/wp-content/plugins/' + slug + '/readme.txt')
+                            .then(r => {
+                                if (!r.ok) throw new Error();
+                                return r.text();
+                            })
+                            .then(t => {
+                                // Verify it's a real plugin readme (contains === or Contributors or plugin name)
+                                if (/={2,}|contributors:|stable tag:|requires at least:/i.test(t)) return slug;
+                                throw new Error('not a readme');
+                            })
+                    )
+                );
+                for (const r of results) {
+                    if (r.status === 'fulfilled' && r.value) found.add(r.value);
+                }
+            }
+            return found;
+        }
+
+        // Extract plugins from additional sources (REST API namespaces, HTML patterns)
+        function extractPluginsFromHtml(html) {
+            const plugins = new Set();
+            // Standard wp-content/plugins path
+            const pluginMatches = html.matchAll(/\/wp-content\/plugins\/([a-z0-9_-]+)\//gi);
+            for (const m of pluginMatches) plugins.add(m[1]);
+            // Detect plugins from inline script handles/IDs
+            const scriptHandles = html.matchAll(/id=["']([a-z0-9_-]+?)(?:-js|-css)(?:-extra)?["']/gi);
+            const knownHandles = {
+                'wpcf7': 'contact-form-7', 'jetpack': 'jetpack', 'akismet': 'akismet',
+                'wc-': 'woocommerce', 'woocommerce': 'woocommerce', 'elementor': 'elementor',
+                'wpforms': 'wpforms-lite', 'monsterinsights': 'monsterinsights',
+                'yoast': 'wordpress-seo', 'rank-math': 'seo-by-rank-math',
+                'mailchimp': 'mailchimp-for-wp', 'tablepress': 'tablepress',
+                'wordfence': 'wordfence', 'sucuri': 'sucuri-scanner',
+                'cookie-notice': 'cookie-notice', 'cookie-law': 'cookie-law-info',
+                'complianz': 'complianz-gdpr', 'iubenda': 'iubenda-cookie-law-solution',
+                'polylang': 'polylang', 'translatepress': 'translatepress-multilingual',
+                'nextgen': 'nextgen-gallery', 'envira': 'envira-gallery-lite',
+                'modula': 'modula-best-grid-gallery', 'smart-slider': 'smart-slider-3',
+                'buddypress': 'buddypress', 'bbpress': 'bbpress',
+                'edd': 'easy-digital-downloads', 'popup-maker': 'popup-maker',
+                'optinmonster': 'optinmonster', 'sumo': 'sumo',
+                'addtoany': 'addtoany', 'shareaholic': 'shareaholic',
+            };
+            for (const m of scriptHandles) {
+                const handle = m[1].toLowerCase();
+                for (const [prefix, slug] of Object.entries(knownHandles)) {
+                    if (handle.startsWith(prefix)) { plugins.add(slug); break; }
+                }
+            }
+            // Detect from common class names / data attributes
+            if (/class=["'][^"']*elementor/i.test(html)) plugins.add('elementor');
+            if (/class=["'][^"']*woocommerce/i.test(html) || /class=["'][^"']*wc-/i.test(html)) plugins.add('woocommerce');
+            if (/class=["'][^"']*wpforms/i.test(html)) plugins.add('wpforms-lite');
+            if (/class=["'][^"']*jetpack/i.test(html)) plugins.add('jetpack');
+            if (/data-cfasync/i.test(html) || /class=["'][^"']*wpcf7/i.test(html)) plugins.add('contact-form-7');
+            if (/class=["'][^"']*bb-/i.test(html) || /fl-builder/i.test(html)) plugins.add('beaver-builder-lite-version');
+            if (/class=["'][^"']*brizy/i.test(html)) plugins.add('brizy');
+            if (/class=["'][^"']*sp-starter/i.test(html) || /starter-templates/i.test(html)) plugins.add('starter-templates');
+            return plugins;
+        }
+
+        function extractPluginsFromApi(apiJson) {
+            const plugins = new Set();
+            try {
+                const data = typeof apiJson === 'string' ? JSON.parse(apiJson) : apiJson;
+                if (data && data.namespaces && Array.isArray(data.namespaces)) {
+                    const nsMap = {
+                        'wc/': 'woocommerce', 'jetpack/': 'jetpack', 'yoast/': 'wordpress-seo',
+                        'contact-form-7/': 'contact-form-7', 'elementor/': 'elementor',
+                        'akismet/': 'akismet', 'wordfence/': 'wordfence',
+                        'wp-mail-smtp/': 'wp-mail-smtp', 'wpforms/': 'wpforms-lite',
+                        'monsterinsights/': 'monsterinsights', 'rank-math/': 'seo-by-rank-math',
+                        'redirection/': 'redirection', 'updraftplus/': 'updraftplus',
+                        'buddypress/': 'buddypress', 'bbpress/': 'bbpress',
+                        'edd/': 'easy-digital-downloads', 'lmfwc/': 'license-manager-for-woocommerce',
+                        'surecart/': 'surecart', 'site-kit/': 'google-site-kit',
+                    };
+                    for (const ns of data.namespaces) {
+                        for (const [prefix, slug] of Object.entries(nsMap)) {
+                            if (ns.startsWith(prefix)) plugins.add(slug);
+                        }
+                    }
+                }
+            } catch { /* ignore */ }
+            return plugins;
+        }
+
         // --- Core detection logic (shared by single & bulk) ---
         async function detectWordPress(urlString) {
             const baseUrl = normalizeUrl(urlString);
@@ -1291,9 +1462,9 @@
             if (themes.size > 0) theme = [...themes][0];
             checks['Theme Detected'] = themes.size > 0;
 
-            // 5. Plugin detection
-            const pluginMatches = html.matchAll(/\/wp-content\/plugins\/([a-z0-9_-]+)\//gi);
-            for (const m of pluginMatches) plugins.add(m[1]);
+            // 5. Plugin detection — extract from HTML + scripts + classes
+            const htmlPlugins = extractPluginsFromHtml(html);
+            for (const p of htmlPlugins) plugins.add(p);
 
             // Run all endpoint checks in parallel (including security-relevant ones)
             const [loginResult, apiResult, xmlrpcResult, feedResult, readmeResult, dirListResult] = await Promise.allSettled([
@@ -1302,7 +1473,7 @@
                     .then(t => /user_login/i.test(t) && /wp-submit/i.test(t)),
 
                 fetchText(baseUrl.origin + '/wp-json/')
-                    .then(t => { const d = JSON.parse(t); return !!(d && (d.name || d.namespaces)); }),
+                    .then(t => { return t; }),
 
                 proxyFetch(baseUrl.origin + '/xmlrpc.php')
                     .then(r => r.text())
@@ -1322,7 +1493,18 @@
             ]);
 
             checks['wp-login.php'] = loginResult.status === 'fulfilled' && loginResult.value;
-            checks['REST API (/wp-json/)'] = apiResult.status === 'fulfilled' && apiResult.value;
+
+            // Extract plugins from REST API namespaces
+            let apiText = null;
+            if (apiResult.status === 'fulfilled') {
+                apiText = apiResult.value;
+                try { const d = JSON.parse(apiText); checks['REST API (/wp-json/)'] = !!(d && (d.name || d.namespaces)); } catch { checks['REST API (/wp-json/)'] = false; }
+                const apiPlugins = extractPluginsFromApi(apiText);
+                for (const p of apiPlugins) plugins.add(p);
+            } else {
+                checks['REST API (/wp-json/)'] = false;
+            }
+
             checks['XML-RPC'] = xmlrpcResult.status === 'fulfilled' && xmlrpcResult.value;
 
             const feedExposesVersion = feedResult.status === 'fulfilled' && feedResult.value;
@@ -1333,6 +1515,10 @@
             if (!version && readmeExposed) version = readmeResult.value;
 
             checks['Plugins Detected'] = plugins.size > 0;
+
+            // Probe popular plugins (runs in parallel batches)
+            const allPlugins = await probePlugins(baseUrl.origin, plugins);
+            for (const p of allPlugins) plugins.add(p);
 
             // Build security data
             const security = buildSecurityData({
@@ -1413,14 +1599,15 @@
             if (themes.size > 0) theme = [...themes][0];
             checks['Theme Detected'] = themes.size > 0;
 
-            const pluginMatches = html.matchAll(/\/wp-content\/plugins\/([a-z0-9_-]+)\//gi);
-            for (const m of pluginMatches) plugins.add(m[1]);
+            // Extract plugins from HTML + scripts + classes
+            const htmlPlugins = extractPluginsFromHtml(html);
+            for (const p of htmlPlugins) plugins.add(p);
             checks['Plugins Detected'] = plugins.size > 0;
 
             // Endpoint checks — resolve as they complete
             const endpointChecks = [
                 { name: 'wp-login.php', promise: proxyFetch(baseUrl.origin + '/wp-login.php').then(r => r.text()).then(t => /user_login/i.test(t) && /wp-submit/i.test(t)) },
-                { name: 'REST API (/wp-json/)', promise: fetchText(baseUrl.origin + '/wp-json/').then(t => { const d = JSON.parse(t); return !!(d && (d.name || d.namespaces)); }) },
+                { name: 'REST API (/wp-json/)', promise: fetchText(baseUrl.origin + '/wp-json/') },
                 { name: 'XML-RPC', promise: proxyFetch(baseUrl.origin + '/xmlrpc.php').then(r => r.text()).then(t => /xml-rpc server accepts post requests only/i.test(t)) }
             ];
 
@@ -1429,11 +1616,23 @@
             const readmePromise = fetchText(baseUrl.origin + '/readme.html').then(t => { const m = t.match(/wordpress[^<]*?version\s*([\d.]+)/i) || t.match(/<br\s*\/?\s*>\s*version\s*([\d.]+)/i); return m ? m[1] : null; }).catch(() => null);
             const dirListPromise = fetchText(baseUrl.origin + '/wp-content/').then(t => /index of/i.test(t) || /<title>[^<]*directory/i.test(t)).catch(() => false);
 
-            // Fire endpoint checks and update live as each resolves
+            // Start plugin probing in parallel
+            const pluginProbePromise = probePlugins(baseUrl.origin, plugins);
+
+            // Fire endpoint checks
             await Promise.allSettled(endpointChecks.map(async (ec) => {
                 try {
                     const val = await ec.promise;
-                    checks[ec.name] = !!val;
+                    if (ec.name === 'REST API (/wp-json/)') {
+                        try {
+                            const d = JSON.parse(val);
+                            checks[ec.name] = !!(d && (d.name || d.namespaces));
+                            const apiPlugins = extractPluginsFromApi(val);
+                            for (const p of apiPlugins) plugins.add(p);
+                        } catch { checks[ec.name] = false; }
+                    } else {
+                        checks[ec.name] = !!val;
+                    }
                 } catch {
                     checks[ec.name] = false;
                 }
@@ -1442,6 +1641,10 @@
             const feedExposesVersion = await feedPromise;
             const readmeExposed = await readmePromise;
             const directoryListing = await dirListPromise;
+
+            // Await plugin probe results
+            const probedPlugins = await pluginProbePromise;
+            for (const p of probedPlugins) plugins.add(p);
 
             if (!version && feedExposesVersion) version = feedExposesVersion;
             if (!version && readmeExposed) version = readmeExposed;
