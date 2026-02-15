@@ -1000,41 +1000,35 @@
             return new URL(url);
         }
 
-        let fetchOptions = { retries: 2, timeoutMs: 30000, retryDelay: 2000 };
+        let fetchTimeout = 15000;
 
-        async function proxyFetch(url, retries, timeoutMs) {
-            const maxRetries = retries !== undefined ? retries : fetchOptions.retries;
-            const timeout = timeoutMs !== undefined ? timeoutMs : fetchOptions.timeoutMs;
-            let lastErr;
-
-            for (const proxy of PROXIES) {
+        async function proxyFetch(url) {
+            // Race all proxies simultaneously — first successful response wins
+            const controllers = [];
+            const promises = PROXIES.map((proxy, idx) => {
+                const controller = new AbortController();
+                controllers.push(controller);
                 const proxyUrl = proxy.url + (proxy.encode ? encodeURIComponent(url) : url);
-                for (let i = 0; i <= maxRetries; i++) {
-                    try {
-                        const controller = new AbortController();
-                        const timer = setTimeout(() => controller.abort(), timeout);
-                        const resp = await fetch(proxyUrl, { signal: controller.signal });
-                        clearTimeout(timer);
-                        if (!resp.ok) {
-                            lastErr = new Error(`HTTP ${resp.status}`);
-                            if (i < maxRetries && (resp.status === 429 || resp.status >= 500)) {
-                                await delay(fetchOptions.retryDelay * (i + 1));
-                                continue;
-                            }
-                            break; // Try next proxy
-                        }
+                return fetch(proxyUrl, { signal: controller.signal })
+                    .then(resp => {
+                        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                        // Cancel other proxies
+                        controllers.forEach((c, i) => { if (i !== idx) c.abort(); });
                         return resp;
-                    } catch (err) {
-                        lastErr = err;
-                        if (i < maxRetries) {
-                            await delay(fetchOptions.retryDelay * (i + 1));
-                            continue;
-                        }
-                        break; // Try next proxy
-                    }
-                }
-            }
-            throw lastErr || new Error('All proxies failed');
+                    });
+            });
+
+            // Add a timeout promise
+            const timeoutPromise = new Promise((_, reject) => {
+                setTimeout(() => {
+                    controllers.forEach(c => c.abort());
+                    reject(new Error('Timeout'));
+                }, fetchTimeout);
+            });
+
+            return Promise.any([...promises, timeoutPromise].map(p =>
+                p instanceof Promise ? p : Promise.reject(p)
+            )).catch(() => { throw new Error('All proxies failed'); });
         }
 
         async function fetchText(url) {
@@ -1331,8 +1325,6 @@
                 progressText.textContent = `Scanning ${Math.min(completed + 1, urls.length)} / ${urls.length} \u2014 ${elapsed}s`;
             }, 100);
 
-            fetchOptions = { retries: 2, timeoutMs: 30000, retryDelay: 2000 };
-
             for (let i = 0; i < urls.length; i += CONCURRENCY) {
                 const batch = urls.slice(i, i + CONCURRENCY);
 
@@ -1380,7 +1372,6 @@
                 if (i + CONCURRENCY < urls.length) await delay(1000);
             }
 
-            fetchOptions = { retries: 2, timeoutMs: 30000, retryDelay: 2000 };
             clearInterval(bulkTimerInterval);
 
             const totalElapsed = ((Date.now() - bulkStartTime) / 1000).toFixed(1);
@@ -1438,7 +1429,6 @@
                 progressText.textContent = `Retrying ${Math.min(completed + 1, total)} / ${total} errors \u2014 ${elapsed}s`;
             }, 100);
 
-            fetchOptions = { retries: 3, timeoutMs: 30000, retryDelay: 2500 };
 
             for (let i = 0; i < errorIndices.length; i += CONCURRENCY) {
                 const batch = errorIndices.slice(i, i + CONCURRENCY);
@@ -1469,7 +1459,6 @@
                 if (i + CONCURRENCY < errorIndices.length) await delay(1500);
             }
 
-            fetchOptions = { retries: 2, timeoutMs: 30000, retryDelay: 2000 };
             clearInterval(timerInterval);
 
             const totalElapsed = ((Date.now() - startTime) / 1000).toFixed(1);
