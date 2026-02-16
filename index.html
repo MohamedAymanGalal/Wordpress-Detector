@@ -798,7 +798,7 @@
             justify-content: space-around;
             flex-wrap: wrap;
             gap: 12px;
-            margin-bottom: 14px;
+            margin-bottom: 16px;
         }
         .psi-gauge-item {
             display: flex;
@@ -830,15 +830,107 @@
             text-align: center;
             line-height: 1.2;
         }
-        .psi-metric-row {
+        .psi-metrics-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+        @media (max-width: 480px) { .psi-metrics-grid { grid-template-columns: 1fr; } }
+        .psi-metric-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 10px;
+            border-radius: 6px;
+            background: var(--bg);
+            border: 1px solid var(--border);
+        }
+        .psi-metric-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+        .psi-metric-dot.green { background: #0cce6b; }
+        .psi-metric-dot.orange { background: #ffa400; }
+        .psi-metric-dot.red { background: #ff4e42; }
+        .psi-metric-info { flex: 1; min-width: 0; }
+        .psi-metric-name { font-size: 12px; color: var(--text-muted); }
+        .psi-metric-val { font-size: 14px; font-weight: 600; color: var(--text-bright); }
+        .psi-section {
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            margin-bottom: 10px;
+            overflow: hidden;
+        }
+        .psi-section-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 5px 0;
+            padding: 10px 12px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-bright);
+            background: var(--bg);
+            user-select: none;
+        }
+        .psi-section-header:hover { opacity: 0.85; }
+        .psi-section-header .psi-arrow { font-size: 10px; color: var(--text-muted); transition: transform 0.2s; }
+        .psi-section.open .psi-arrow { transform: rotate(180deg); }
+        .psi-section-count {
+            font-size: 11px;
+            font-weight: 500;
+            padding: 1px 7px;
+            border-radius: 10px;
+            margin-left: 6px;
+        }
+        .psi-section-count.red { background: rgba(255,78,66,0.15); color: #ff4e42; }
+        .psi-section-count.orange { background: rgba(255,164,0,0.15); color: #ffa400; }
+        .psi-section-count.green { background: rgba(12,206,107,0.15); color: #0cce6b; }
+        .psi-section-body {
+            display: none;
+            padding: 0;
+        }
+        .psi-section.open .psi-section-body { display: block; }
+        .psi-audit-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+            padding: 10px 12px;
+            border-top: 1px solid var(--border);
             font-size: 13px;
         }
-        .psi-metric-label { color: var(--text-sub); }
-        .psi-metric-value { font-weight: 500; }
+        .psi-audit-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            margin-top: 6px;
+        }
+        .psi-audit-dot.red { background: #ff4e42; }
+        .psi-audit-dot.orange { background: #ffa400; }
+        .psi-audit-dot.green { background: #0cce6b; }
+        .psi-audit-dot.gray { background: var(--text-muted); }
+        .psi-audit-info { flex: 1; min-width: 0; }
+        .psi-audit-title { color: var(--text-bright); font-weight: 500; }
+        .psi-audit-savings {
+            font-size: 12px;
+            font-weight: 500;
+            color: #ff4e42;
+            white-space: nowrap;
+            margin-left: 8px;
+            flex-shrink: 0;
+        }
+        .psi-audit-desc {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 2px;
+            line-height: 1.4;
+            display: none;
+        }
+        .psi-audit-item.expanded .psi-audit-desc { display: block; }
 
         /* Security Score */
         .security-progress-wrapper {
@@ -1040,7 +1132,10 @@
                             </div>
                             <div id="pagespeedScores" style="display:none">
                                 <div class="psi-gauges" id="psiGauges"></div>
-                                <div id="psiMetrics"></div>
+                                <div id="psiMetricsSection"></div>
+                                <div id="psiOpportunities"></div>
+                                <div id="psiDiagnostics"></div>
+                                <div id="psiPassed"></div>
                             </div>
                         </div>
                     </div>
@@ -1457,23 +1552,78 @@
                 const data = await resp.json();
                 const cats = data.lighthouseResult?.categories || {};
                 const audits = data.lighthouseResult?.audits || {};
+                const perfRefs = cats.performance?.auditRefs || [];
+
+                // Build group map from audit refs
+                const groupMap = {};
+                perfRefs.forEach(ref => { if (ref.group) groupMap[ref.id] = ref.group; });
+
+                // Extract metrics with numeric values for threshold coloring
+                const metricIds = ['first-contentful-paint', 'largest-contentful-paint', 'total-blocking-time', 'cumulative-layout-shift', 'speed-index'];
+                const metrics = metricIds.map(id => {
+                    const a = audits[id];
+                    if (!a) return null;
+                    return { id, title: a.title, displayValue: a.displayValue || '', numericValue: a.numericValue || 0, score: a.score };
+                }).filter(Boolean);
+
+                // Extract opportunities (group: load-opportunities, score < 1)
+                const opportunities = perfRefs
+                    .filter(ref => ref.group === 'load-opportunities' && audits[ref.id] && audits[ref.id].score !== null && audits[ref.id].score < 1)
+                    .map(ref => {
+                        const a = audits[ref.id];
+                        return { title: a.title, displayValue: a.displayValue || '', description: a.description || '', score: a.score, savings: a.details?.overallSavingsMs ? (a.details.overallSavingsMs / 1000).toFixed(1) + ' s' : (a.details?.overallSavingsBytes ? (a.details.overallSavingsBytes / 1024).toFixed(0) + ' KiB' : '') };
+                    })
+                    .sort((a, b) => a.score - b.score);
+
+                // Extract diagnostics (group: diagnostics, score < 1)
+                const diagnostics = perfRefs
+                    .filter(ref => ref.group === 'diagnostics' && audits[ref.id] && audits[ref.id].score !== null && audits[ref.id].score < 1)
+                    .map(ref => {
+                        const a = audits[ref.id];
+                        return { title: a.title, displayValue: a.displayValue || '', description: a.description || '', score: a.score };
+                    })
+                    .sort((a, b) => a.score - b.score);
+
+                // Extract passed audits
+                const passedAudits = perfRefs
+                    .filter(ref => audits[ref.id] && audits[ref.id].score === 1 && ref.group && ref.group !== 'metrics')
+                    .map(ref => ({ title: audits[ref.id].title }));
+
                 return {
                     performance: cats.performance ? Math.round(cats.performance.score * 100) : null,
                     accessibility: cats.accessibility ? Math.round(cats.accessibility.score * 100) : null,
                     bestPractices: cats['best-practices'] ? Math.round(cats['best-practices'].score * 100) : null,
                     seo: cats.seo ? Math.round(cats.seo.score * 100) : null,
-                    metrics: {
-                        fcp: audits['first-contentful-paint']?.displayValue || null,
-                        lcp: audits['largest-contentful-paint']?.displayValue || null,
-                        tbt: audits['total-blocking-time']?.displayValue || null,
-                        cls: audits['cumulative-layout-shift']?.displayValue || null,
-                        si: audits['speed-index']?.displayValue || null,
-                        tti: audits['interactive']?.displayValue || null,
-                    }
+                    metrics,
+                    opportunities,
+                    diagnostics,
+                    passedAudits
                 };
             } catch {
                 return null;
             }
+        }
+
+        // Google's metric thresholds for coloring
+        function psiMetricColor(id, numericValue) {
+            const thresholds = {
+                'first-contentful-paint': [1800, 3000],
+                'largest-contentful-paint': [2500, 4000],
+                'total-blocking-time': [200, 600],
+                'cumulative-layout-shift': [0.1, 0.25],
+                'speed-index': [3400, 5800]
+            };
+            const t = thresholds[id];
+            if (!t) return 'gray';
+            return numericValue <= t[0] ? 'green' : numericValue <= t[1] ? 'orange' : 'red';
+        }
+
+        function togglePsiSection(el) {
+            el.closest('.psi-section').classList.toggle('open');
+        }
+
+        function togglePsiAudit(el) {
+            el.closest('.psi-audit-item').classList.toggle('expanded');
         }
 
         function renderPageSpeed(psi) {
@@ -1481,7 +1631,6 @@
             const loadingEl = document.getElementById('pagespeedLoading');
             const scoresEl = document.getElementById('pagespeedScores');
             const gaugesEl = document.getElementById('psiGauges');
-            const metricsEl = document.getElementById('psiMetrics');
             const psiBadge = document.getElementById('psiBadge');
 
             loadingEl.style.display = 'none';
@@ -1502,6 +1651,7 @@
 
             scoresEl.style.display = 'block';
 
+            // --- Category gauges ---
             const categories = [
                 { label: 'Performance', score: psi.performance },
                 { label: 'Accessibility', score: psi.accessibility },
@@ -1512,7 +1662,7 @@
             const circumference = 2 * Math.PI * 22;
             gaugesEl.innerHTML = categories.map(cat => {
                 if (cat.score == null) return '';
-                const color = cat.score >= 90 ? '#22c55e' : cat.score >= 50 ? '#eab308' : '#ef4444';
+                const color = cat.score >= 90 ? '#0cce6b' : cat.score >= 50 ? '#ffa400' : '#ff4e42';
                 const offset = circumference - (cat.score / 100) * circumference;
                 return `<div class="psi-gauge-item">
                     <div class="psi-gauge">
@@ -1526,20 +1676,86 @@
                 </div>`;
             }).join('');
 
-            const metricLabels = {
-                fcp: 'First Contentful Paint',
-                lcp: 'Largest Contentful Paint',
-                tbt: 'Total Blocking Time',
-                cls: 'Cumulative Layout Shift',
-                si: 'Speed Index',
-                tti: 'Time to Interactive'
-            };
+            // --- Metrics with color-coded dots ---
+            const metricsEl = document.getElementById('psiMetricsSection');
+            if (psi.metrics && psi.metrics.length > 0) {
+                metricsEl.innerHTML = '<div class="psi-metrics-grid">' + psi.metrics.map(m => {
+                    const color = psiMetricColor(m.id, m.numericValue);
+                    return `<div class="psi-metric-item">
+                        <span class="psi-metric-dot ${color}"></span>
+                        <div class="psi-metric-info">
+                            <div class="psi-metric-name">${m.title}</div>
+                            <div class="psi-metric-val">${m.displayValue}</div>
+                        </div>
+                    </div>`;
+                }).join('') + '</div>';
+            } else {
+                metricsEl.innerHTML = '';
+            }
 
-            const metricRows = Object.entries(psi.metrics)
-                .filter(([, v]) => v != null)
-                .map(([key, val]) => `<div class="psi-metric-row"><span class="psi-metric-label">${metricLabels[key]}</span><span class="psi-metric-value">${val}</span></div>`)
-                .join('');
-            metricsEl.innerHTML = metricRows;
+            // --- Opportunities ---
+            const oppsEl = document.getElementById('psiOpportunities');
+            if (psi.opportunities && psi.opportunities.length > 0) {
+                oppsEl.innerHTML = `<div class="psi-section">
+                    <div class="psi-section-header" onclick="togglePsiSection(this)">
+                        <span>Opportunities <span class="psi-section-count orange">${psi.opportunities.length}</span></span>
+                        <span class="psi-arrow">&#9660;</span>
+                    </div>
+                    <div class="psi-section-body">
+                        ${psi.opportunities.map(o => `<div class="psi-audit-item" onclick="togglePsiAudit(this)" style="cursor:pointer">
+                            <span class="psi-audit-dot ${o.score <= 0.49 ? 'red' : 'orange'}"></span>
+                            <div class="psi-audit-info">
+                                <div class="psi-audit-title">${o.title}</div>
+                                <div class="psi-audit-desc">${o.description.replace(/<[^>]+>/g, '')}</div>
+                            </div>
+                            ${o.savings ? `<span class="psi-audit-savings">${o.savings}</span>` : ''}
+                        </div>`).join('')}
+                    </div>
+                </div>`;
+            } else {
+                oppsEl.innerHTML = '';
+            }
+
+            // --- Diagnostics ---
+            const diagEl = document.getElementById('psiDiagnostics');
+            if (psi.diagnostics && psi.diagnostics.length > 0) {
+                diagEl.innerHTML = `<div class="psi-section">
+                    <div class="psi-section-header" onclick="togglePsiSection(this)">
+                        <span>Diagnostics <span class="psi-section-count orange">${psi.diagnostics.length}</span></span>
+                        <span class="psi-arrow">&#9660;</span>
+                    </div>
+                    <div class="psi-section-body">
+                        ${psi.diagnostics.map(d => `<div class="psi-audit-item" onclick="togglePsiAudit(this)" style="cursor:pointer">
+                            <span class="psi-audit-dot ${d.score <= 0.49 ? 'red' : 'orange'}"></span>
+                            <div class="psi-audit-info">
+                                <div class="psi-audit-title">${d.title}${d.displayValue ? ' \u2014 ' + d.displayValue : ''}</div>
+                                <div class="psi-audit-desc">${d.description.replace(/<[^>]+>/g, '')}</div>
+                            </div>
+                        </div>`).join('')}
+                    </div>
+                </div>`;
+            } else {
+                diagEl.innerHTML = '';
+            }
+
+            // --- Passed Audits ---
+            const passedEl = document.getElementById('psiPassed');
+            if (psi.passedAudits && psi.passedAudits.length > 0) {
+                passedEl.innerHTML = `<div class="psi-section">
+                    <div class="psi-section-header" onclick="togglePsiSection(this)">
+                        <span>Passed Audits <span class="psi-section-count green">${psi.passedAudits.length}</span></span>
+                        <span class="psi-arrow">&#9660;</span>
+                    </div>
+                    <div class="psi-section-body">
+                        ${psi.passedAudits.map(p => `<div class="psi-audit-item">
+                            <span class="psi-audit-dot green"></span>
+                            <div class="psi-audit-info"><div class="psi-audit-title">${p.title}</div></div>
+                        </div>`).join('')}
+                    </div>
+                </div>`;
+            } else {
+                passedEl.innerHTML = '';
+            }
         }
 
         // --- Security score calculation ---
