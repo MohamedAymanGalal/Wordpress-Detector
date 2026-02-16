@@ -1204,7 +1204,6 @@
                                 <div id="psiMetricsSection"></div>
                                 <div id="psiOpportunities"></div>
                                 <div id="psiDiagnostics"></div>
-                                <div id="psiPassed"></div>
                                 <button class="suggestions-toggle" id="psiSuggestionsToggle" onclick="togglePsiSuggestions()" style="display:none">How to Improve Your Page Speed</button>
                                 <div id="psiSuggestionsContainer" class="suggestions-container"></div>
                             </div>
@@ -1662,11 +1661,6 @@
                     })
                     .sort((a, b) => a.score - b.score);
 
-                // Extract passed audits
-                const passedAudits = perfRefs
-                    .filter(ref => audits[ref.id] && audits[ref.id].score === 1 && ref.group && ref.group !== 'metrics')
-                    .map(ref => ({ title: audits[ref.id].title }));
-
                 return {
                     performance: cats.performance ? Math.round(cats.performance.score * 100) : null,
                     accessibility: cats.accessibility ? Math.round(cats.accessibility.score * 100) : null,
@@ -1674,8 +1668,7 @@
                     seo: cats.seo ? Math.round(cats.seo.score * 100) : null,
                     metrics,
                     opportunities,
-                    diagnostics,
-                    passedAudits
+                    diagnostics
                 };
             } catch {
                 return null;
@@ -1816,25 +1809,6 @@
                 </div>`;
             } else {
                 diagEl.innerHTML = '';
-            }
-
-            // --- Passed Audits ---
-            const passedEl = document.getElementById('psiPassed');
-            if (psi.passedAudits && psi.passedAudits.length > 0) {
-                passedEl.innerHTML = `<div class="psi-section">
-                    <div class="psi-section-header" onclick="togglePsiSection(this)">
-                        <span>Passed Audits <span class="psi-section-count green">${psi.passedAudits.length}</span></span>
-                        <span class="psi-arrow">&#9660;</span>
-                    </div>
-                    <div class="psi-section-body">
-                        ${psi.passedAudits.map(p => `<div class="psi-audit-item">
-                            <span class="psi-audit-dot green"></span>
-                            <div class="psi-audit-info"><div class="psi-audit-title">${p.title}</div></div>
-                        </div>`).join('')}
-                    </div>
-                </div>`;
-            } else {
-                passedEl.innerHTML = '';
             }
 
             // --- How to Improve suggestions ---
