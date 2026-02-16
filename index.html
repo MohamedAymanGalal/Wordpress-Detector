@@ -1047,9 +1047,9 @@
         .print-header { display: none; }
 
         @media print {
-            body { background: #fff !important; color: #222 !important; }
+            body { background: #ffffff !important; color: #000000 !important; }
             .container { max-width: 100%; box-shadow: none; padding: 0; }
-            .card { box-shadow: none; border: none; background: #fff; }
+            .card { box-shadow: none; border: none; background: #ffffff; }
 
             /* Hide non-report elements */
             .header, .tabs, .tab-content:not(#tab-single),
@@ -1065,43 +1065,43 @@
                 text-align: center;
                 margin-bottom: 16px;
                 padding-bottom: 12px;
-                border-bottom: 2px solid #333;
+                border-bottom: 2px solid #161616;
             }
-            .print-header h2 { font-size: 20px; margin-bottom: 4px; color: #111; }
-            .print-header .print-url { font-size: 13px; color: #666; }
-            .print-header .print-date { font-size: 11px; color: #999; margin-top: 2px; }
+            .print-header h2 { font-size: 20px; margin-bottom: 4px; color: #000000; }
+            .print-header .print-url { font-size: 13px; color: #161616; }
+            .print-header .print-date { font-size: 11px; color: #161616; margin-top: 2px; }
 
             /* Force results visible */
             #tab-single { display: block !important; }
             .results { display: block !important; }
 
             /* Force all accordions open */
-            .accordion { display: block !important; border-color: #ddd !important; }
+            .accordion { display: block !important; border-color: #161616 !important; }
             .accordion-body { display: block !important; }
-            .accordion-header { cursor: default; background: #f5f5f5 !important; color: #222 !important; }
-            .accordion-badge { color: #fff !important; }
+            .accordion-header { cursor: default; background: #ffffff !important; color: #000000 !important; }
+            .accordion-badge { color: #ffffff !important; }
 
             /* Force PSI sub-sections open */
             .psi-section-body { display: block !important; }
 
             /* Readable colors for print */
-            .verdict { background: #f9f9f9 !important; border-color: #ccc !important; }
-            .verdict.is-wp { border-color: #22c55e !important; background: #f0fdf4 !important; }
-            .verdict.not-wp { border-color: #ef4444 !important; background: #fef2f2 !important; }
-            #verdictText { color: #111 !important; }
-            #confidenceText { color: #555 !important; }
-            .detail-row .label { color: #666 !important; }
-            .detail-row .value { color: #222 !important; }
-            .detail-section-label { color: #888 !important; border-color: #ddd !important; }
-            .plugin-tag { background: #eee !important; color: #333 !important; }
-            .psi-metric-item { background: #f9f9f9 !important; border-color: #ddd !important; }
-            .psi-metric-name { color: #666 !important; }
-            .psi-metric-val { color: #222 !important; }
-            .psi-gauge-label { color: #666 !important; }
-            .psi-audit-title { color: #222 !important; }
-            .psi-audit-desc { display: block !important; color: #666 !important; }
-            .security-finding { color: #222 !important; }
-            .security-finding div { color: #222 !important; }
+            .verdict { background: #ffffff !important; border-color: #161616 !important; }
+            .verdict.is-wp { border-color: #22c55e !important; background: #ffffff !important; }
+            .verdict.not-wp { border-color: #ef4444 !important; background: #ffffff !important; }
+            #verdictText { color: #000000 !important; }
+            #confidenceText { color: #161616 !important; }
+            .detail-row .label { color: #161616 !important; }
+            .detail-row .value { color: #000000 !important; }
+            .detail-section-label { color: #161616 !important; border-color: #161616 !important; }
+            .plugin-tag { background: #ffffff !important; color: #000000 !important; border: 1px solid #161616 !important; }
+            .psi-metric-item { background: #ffffff !important; border-color: #161616 !important; }
+            .psi-metric-name { color: #161616 !important; }
+            .psi-metric-val { color: #000000 !important; }
+            .psi-gauge-label { color: #161616 !important; }
+            .psi-audit-title { color: #000000 !important; }
+            .psi-audit-desc { display: block !important; color: #161616 !important; }
+            .security-finding { color: #000000 !important; }
+            .security-finding div { color: #000000 !important; }
             .security-progress-wrapper { background: transparent !important; }
 
             /* Page break control */
