@@ -1425,47 +1425,6 @@
             return null;
         }
 
-        // --- Top 50 most popular plugins to probe ---
-        const PLUGIN_PROBES = [
-            'akismet','contact-form-7','woocommerce','elementor','wordfence','wordpress-seo',
-            'jetpack','wpforms-lite','classic-editor','really-simple-ssl','all-in-one-seo-pack',
-            'monsterinsights','updraftplus','litespeed-cache','wp-super-cache','w3-total-cache',
-            'wp-mail-smtp','redirection','limit-login-attempts-reloaded','sucuri-scanner',
-            'advanced-custom-fields','all-in-one-wp-security-and-firewall','mailchimp-for-wp',
-            'tablepress','wp-optimize','smush','ewww-image-optimizer','autoptimize',
-            'duplicate-post','seo-by-rank-math','cookie-notice','complianz-gdpr',
-            'all-in-one-wp-migration','duplicator','site-kit-by-google',
-            'woocommerce-payments','woocommerce-gateway-stripe','popup-maker',
-            'polylang','buddypress','bbpress','beaver-builder-lite-version',
-            'insert-headers-and-footers','nextgen-gallery','smart-slider-3',
-            'addtoany','user-role-editor','kadence-blocks','essential-addons-for-elementor-lite',
-            'header-footer-elementor','yith-woocommerce-wishlist',
-        ];
-
-        // Probe plugins by checking if their readme.txt exists
-        async function probePlugins(baseOrigin, alreadyFound) {
-            const found = new Set(alreadyFound);
-            const toProbe = PLUGIN_PROBES.filter(slug => !found.has(slug));
-            const BATCH = 10;
-            const results = await Promise.allSettled(
-                toProbe.map(slug =>
-                    proxyFetch(baseOrigin + '/wp-content/plugins/' + slug + '/readme.txt')
-                        .then(r => {
-                            if (!r.ok) throw new Error();
-                            return r.text();
-                        })
-                        .then(t => {
-                            if (/={2,}|contributors:|stable tag:|requires at least:/i.test(t)) return slug;
-                            throw new Error('not a readme');
-                        })
-                )
-            );
-            for (const r of results) {
-                if (r.status === 'fulfilled' && r.value) found.add(r.value);
-            }
-            return found;
-        }
-
         // Extract plugins from additional sources (REST API namespaces, HTML patterns)
         function extractPluginsFromHtml(html) {
             const plugins = new Set();
@@ -1728,9 +1687,6 @@
             const readmePromise = fetchText(baseUrl.origin + '/readme.html').then(t => { const m = t.match(/wordpress[^<]*?version\s*([\d.]+)/i) || t.match(/<br\s*\/?\s*>\s*version\s*([\d.]+)/i); return m ? m[1] : null; }).catch(() => null);
             const dirListPromise = fetchText(baseUrl.origin + '/wp-content/').then(t => /index of/i.test(t) || /<title>[^<]*directory/i.test(t)).catch(() => false);
 
-            // Start plugin probing in parallel
-            const pluginProbePromise = probePlugins(baseUrl.origin, plugins);
-
             // Fire endpoint checks
             await Promise.allSettled(endpointChecks.map(async (ec) => {
                 try {
@@ -1753,10 +1709,6 @@
             const feedExposesVersion = await feedPromise;
             const readmeExposed = await readmePromise;
             const directoryListing = await dirListPromise;
-
-            // Await plugin probe results
-            const probedPlugins = await pluginProbePromise;
-            for (const p of probedPlugins) plugins.add(p);
 
             if (!version && feedExposesVersion) version = feedExposesVersion;
             if (!version && readmeExposed) version = readmeExposed;
