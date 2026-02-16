@@ -1229,7 +1229,7 @@
     <script>
         const PROXIES = [
             { url: 'https://api.codetabs.com/v1/proxy/?quest=', encode: false },
-            { url: 'https://cors-get-proxy.sirjosh.workers.dev/?url=', encode: false }
+            { url: 'https://cors.eu.org/', encode: false }
         ];
 
         // --- Theme toggle ---
@@ -1383,17 +1383,21 @@
         let fetchTimeout = 15000;
 
         async function proxyFetch(url) {
-            // Race all proxies in parallel — first successful response wins
+            // Race all proxies — first to return valid content wins
             const controllers = [];
             const promises = PROXIES.map((proxy, idx) => {
                 const controller = new AbortController();
                 controllers.push(controller);
                 const proxyUrl = proxy.url + (proxy.encode ? encodeURIComponent(url) : url);
                 return fetch(proxyUrl, { signal: controller.signal })
-                    .then(resp => {
+                    .then(async resp => {
                         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                        const text = await resp.text();
+                        // Reject tiny responses — real websites are always > 1KB
+                        // This catches fake proxy pages that return their own small HTML
+                        if (text.length < 1000) throw new Error('Response too small — likely proxy error page');
                         controllers.forEach((c, i) => { if (i !== idx) c.abort(); });
-                        return resp;
+                        return text;
                     });
             });
 
@@ -1410,8 +1414,7 @@
         }
 
         async function fetchText(url) {
-            const resp = await proxyFetch(url);
-            return await resp.text();
+            return await proxyFetch(url);
         }
 
         function delay(ms) {
@@ -1422,8 +1425,8 @@
         async function checkSSL(domain) {
             try {
                 const sslUrl = `https://ssl-checker.io/api/v1/check/${domain}`;
-                const resp = await proxyFetch(sslUrl);
-                const data = JSON.parse(await resp.text());
+                const text = await proxyFetch(sslUrl);
+                const data = JSON.parse(text);
                 const r = data.result || data;
                 return {
                     valid: !!r.cert_valid,
@@ -1517,8 +1520,7 @@
                     } catch { /* try next */ }
                     try {
                         // Fallback to proxy
-                        const resp = await proxyFetch(rdapUrl);
-                        const text = await resp.text();
+                        const text = await proxyFetch(rdapUrl);
                         if (text.trim().startsWith('{')) {
                             data = JSON.parse(text);
                             break;
@@ -2050,14 +2052,12 @@
             // Run all endpoint checks in parallel (including security-relevant ones)
             const [loginResult, apiResult, xmlrpcResult, feedResult, readmeResult, dirListResult] = await Promise.allSettled([
                 proxyFetch(baseUrl.origin + '/wp-login.php')
-                    .then(r => r.text())
                     .then(t => /user_login/i.test(t) && /wp-submit/i.test(t)),
 
                 fetchText(baseUrl.origin + '/wp-json/')
                     .then(t => { return t; }),
 
                 proxyFetch(baseUrl.origin + '/xmlrpc.php')
-                    .then(r => r.text())
                     .then(t => /xml-rpc server accepts post requests only/i.test(t)),
 
                 fetchText(baseUrl.origin + '/feed/')
@@ -2190,9 +2190,9 @@
 
             // Endpoint checks — resolve as they complete
             const endpointChecks = [
-                { name: 'wp-login.php', promise: proxyFetch(baseUrl.origin + '/wp-login.php').then(r => r.text()).then(t => /user_login/i.test(t) && /wp-submit/i.test(t)) },
+                { name: 'wp-login.php', promise: proxyFetch(baseUrl.origin + '/wp-login.php').then(t => /user_login/i.test(t) && /wp-submit/i.test(t)) },
                 { name: 'REST API (/wp-json/)', promise: fetchText(baseUrl.origin + '/wp-json/') },
-                { name: 'XML-RPC', promise: proxyFetch(baseUrl.origin + '/xmlrpc.php').then(r => r.text()).then(t => /xml-rpc server accepts post requests only/i.test(t)) }
+                { name: 'XML-RPC', promise: proxyFetch(baseUrl.origin + '/xmlrpc.php').then(t => /xml-rpc server accepts post requests only/i.test(t)) }
             ];
 
             // Feed & readme for version, directory listing for security
