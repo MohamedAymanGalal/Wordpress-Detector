@@ -731,6 +731,57 @@
         .share-btn:hover { background: var(--btn-secondary-hover); }
         .share-btn.active { display: block; }
 
+        /* Accordion */
+        .accordion {
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            margin-bottom: 10px;
+            overflow: hidden;
+            transition: border-color 0.2s;
+        }
+        .accordion-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 16px;
+            background: var(--bg);
+            cursor: pointer;
+            user-select: none;
+            transition: background 0.15s;
+        }
+        .accordion-header:hover { background: var(--btn-secondary-bg); }
+        .accordion-header-left {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-bright);
+        }
+        .accordion-badge {
+            font-size: 11px;
+            font-weight: 600;
+            padding: 2px 8px;
+            border-radius: 4px;
+        }
+        .accordion-badge.green { background: rgba(34, 197, 94, 0.15); color: #22c55e; }
+        .accordion-badge.yellow { background: rgba(234, 179, 8, 0.15); color: #eab308; }
+        .accordion-badge.red { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+        .accordion-badge.blue { background: rgba(59, 130, 246, 0.15); color: #3b82f6; }
+        .accordion-arrow {
+            font-size: 12px;
+            color: var(--text-dim);
+            transition: transform 0.2s;
+            flex-shrink: 0;
+        }
+        .accordion.open .accordion-arrow { transform: rotate(180deg); }
+        .accordion-body {
+            display: none;
+            padding: 0 16px 16px;
+            background: var(--bg);
+        }
+        .accordion.open .accordion-body { display: block; }
+
         /* PageSpeed Insights */
         .psi-gauges {
             display: flex;
@@ -926,41 +977,77 @@
                         <div class="confidence" id="confidenceText"></div>
                     </div>
 
-                    <div id="infoSection" class="details-section" style="display:none">
-                        <div class="details-title">Information</div>
-                        <div id="infoRows"></div>
-                    </div>
-
-                    <div id="sslSection" class="details-section" style="display:none">
-                        <div class="details-title">SSL Certificate</div>
-                        <div id="sslRows"></div>
-                    </div>
-
-                    <div id="pluginsSection" class="details-section" style="display:none">
-                        <div class="details-title">Detected Plugins</div>
-                        <div class="plugins-list" id="pluginsList"></div>
-                    </div>
-
-                    <div id="pagespeedSection" class="details-section" style="display:none">
-                        <div class="details-title">PageSpeed Insights</div>
-                        <div id="pagespeedLoading" style="display:none;text-align:center;padding:12px 0;font-size:13px;color:var(--text-muted)">
-                            <div class="spinner" style="width:24px;height:24px;border-width:3px;margin-bottom:8px"></div>
-                            Analyzing page performance...
+                    <!-- General Overview Accordion -->
+                    <div class="accordion open" id="accordionOverview" style="display:none">
+                        <div class="accordion-header" onclick="toggleAccordion('accordionOverview')">
+                            <div class="accordion-header-left">
+                                <span>General Overview</span>
+                                <span class="accordion-badge blue" id="overviewBadge"></span>
+                            </div>
+                            <span class="accordion-arrow">&#9660;</span>
                         </div>
-                        <div id="pagespeedScores" style="display:none">
-                            <div class="psi-gauges" id="psiGauges"></div>
-                            <div id="psiMetrics"></div>
+                        <div class="accordion-body">
+                            <div id="infoRows"></div>
+                            <div id="pluginsSection" style="display:none;margin-top:12px">
+                                <div class="details-title">Detected Plugins</div>
+                                <div class="plugins-list" id="pluginsList"></div>
+                            </div>
                         </div>
                     </div>
 
-                    <div id="securitySection" class="details-section" style="display:none">
-                        <div class="security-score-header">
-                            <div class="details-title" style="border:none;margin:0;padding:0">Security Score</div>
-                            <div class="security-gauge" id="securityGauge"></div>
+                    <!-- SSL / Domain Accordion -->
+                    <div class="accordion" id="accordionSsl" style="display:none">
+                        <div class="accordion-header" onclick="toggleAccordion('accordionSsl')">
+                            <div class="accordion-header-left">
+                                <span>SSL / Domain</span>
+                                <span class="accordion-badge" id="sslBadge"></span>
+                            </div>
+                            <span class="accordion-arrow">&#9660;</span>
                         </div>
-                        <div id="securityFindings"></div>
-                        <button class="suggestions-toggle" id="suggestionsToggle" onclick="toggleSuggestions()" style="display:none">How to Improve Your Score</button>
-                        <div id="securitySuggestions" class="suggestions-container"></div>
+                        <div class="accordion-body">
+                            <div id="sslRows"></div>
+                        </div>
+                    </div>
+
+                    <!-- PageSpeed Insights Accordion -->
+                    <div class="accordion" id="accordionPagespeed" style="display:none">
+                        <div class="accordion-header" onclick="toggleAccordion('accordionPagespeed')">
+                            <div class="accordion-header-left">
+                                <span>PageSpeed Insights</span>
+                                <span class="accordion-badge" id="psiBadge"></span>
+                            </div>
+                            <span class="accordion-arrow">&#9660;</span>
+                        </div>
+                        <div class="accordion-body">
+                            <div id="pagespeedLoading" style="display:none;text-align:center;padding:12px 0;font-size:13px;color:var(--text-muted)">
+                                <div class="spinner" style="width:24px;height:24px;border-width:3px;margin-bottom:8px"></div>
+                                Analyzing page performance...
+                            </div>
+                            <div id="pagespeedScores" style="display:none">
+                                <div class="psi-gauges" id="psiGauges"></div>
+                                <div id="psiMetrics"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Security Score Accordion -->
+                    <div class="accordion" id="accordionSecurity" style="display:none">
+                        <div class="accordion-header" onclick="toggleAccordion('accordionSecurity')">
+                            <div class="accordion-header-left">
+                                <span>Security Score</span>
+                                <span class="accordion-badge" id="securityBadge"></span>
+                            </div>
+                            <span class="accordion-arrow">&#9660;</span>
+                        </div>
+                        <div class="accordion-body">
+                            <div class="security-score-header">
+                                <div></div>
+                                <div class="security-gauge" id="securityGauge"></div>
+                            </div>
+                            <div id="securityFindings"></div>
+                            <button class="suggestions-toggle" id="suggestionsToggle" onclick="toggleSuggestions()" style="display:none">How to Improve Your Score</button>
+                            <div id="securitySuggestions" class="suggestions-container"></div>
+                        </div>
                     </div>
 
                     <button class="share-btn" id="shareBtn" onclick="shareResults()">Share Results</button>
@@ -1275,18 +1362,27 @@
         }
 
         function renderPageSpeed(psi) {
-            const section = document.getElementById('pagespeedSection');
+            const accordion = document.getElementById('accordionPagespeed');
             const loadingEl = document.getElementById('pagespeedLoading');
             const scoresEl = document.getElementById('pagespeedScores');
             const gaugesEl = document.getElementById('psiGauges');
             const metricsEl = document.getElementById('psiMetrics');
+            const psiBadge = document.getElementById('psiBadge');
 
             loadingEl.style.display = 'none';
 
             if (!psi) {
                 scoresEl.style.display = 'none';
-                section.style.display = 'none';
+                accordion.style.display = 'none';
                 return;
+            }
+
+            // Update badge with performance score
+            if (psi.performance != null) {
+                psiBadge.textContent = psi.performance + '/100';
+                psiBadge.className = 'accordion-badge ' + (psi.performance >= 90 ? 'green' : psi.performance >= 50 ? 'yellow' : 'red');
+            } else {
+                psiBadge.textContent = '';
             }
 
             scoresEl.style.display = 'block';
@@ -1896,18 +1992,21 @@
         }
 
         // All check names used by detectWordPress, in order
+        function toggleAccordion(id) {
+            document.getElementById(id).classList.toggle('open');
+        }
+
         function showLiveChecks() {
             const results = document.getElementById('results');
             const verdict = document.getElementById('verdict');
             const verdictText = document.getElementById('verdictText');
             const confidenceText = document.getElementById('confidenceText');
 
-            // Reset sections
-            document.getElementById('infoSection').style.display = 'none';
-            document.getElementById('sslSection').style.display = 'none';
-            document.getElementById('pluginsSection').style.display = 'none';
-            document.getElementById('securitySection').style.display = 'none';
-            document.getElementById('pagespeedSection').style.display = 'none';
+            // Reset accordions
+            document.getElementById('accordionOverview').style.display = 'none';
+            document.getElementById('accordionSsl').style.display = 'none';
+            document.getElementById('accordionPagespeed').style.display = 'none';
+            document.getElementById('accordionSecurity').style.display = 'none';
             document.getElementById('shareBtn').classList.remove('active');
 
             verdict.className = 'verdict';
@@ -2004,46 +2103,54 @@
             verdictText.textContent = isWordPress ? 'WordPress Detected' : 'Not WordPress';
             confidenceText.textContent = `${Object.values(checks).filter(Boolean).length}/${Object.keys(checks).length} checks passed${scanTime ? ' \u00B7 ' + scanTime + 's' : ''}`;
 
-            const infoSection = document.getElementById('infoSection');
+            // --- General Overview accordion ---
+            const accordionOverview = document.getElementById('accordionOverview');
+            const overviewBadge = document.getElementById('overviewBadge');
             const infoRows = document.getElementById('infoRows');
-            infoRows.innerHTML = '';
-
-            if (version || theme || pageBuilder) {
-                infoSection.style.display = 'block';
-                if (version) {
-                    infoRows.innerHTML += `<div class="detail-row"><span class="label">WordPress Version</span><span class="value">${version}</span></div>`;
-                }
-                if (theme) {
-                    infoRows.innerHTML += `<div class="detail-row"><span class="label">Active Theme</span><span class="value">${theme}</span></div>`;
-                }
-                if (pageBuilder) {
-                    infoRows.innerHTML += `<div class="detail-row"><span class="label">Page Builder</span><span class="value">${pageBuilder}</span></div>`;
-                }
-            } else {
-                infoSection.style.display = 'none';
-            }
-
             const pluginsSection = document.getElementById('pluginsSection');
             const pluginsList = document.getElementById('pluginsList');
+            infoRows.innerHTML = '';
             pluginsList.innerHTML = '';
 
-            if (plugins.length > 0) {
-                pluginsSection.style.display = 'block';
-                plugins.forEach(p => {
-                    pluginsList.innerHTML += `<span class="plugin-tag">${p}</span>`;
-                });
+            const hasInfo = version || theme || pageBuilder;
+            const hasPlugins = plugins.length > 0;
+
+            if (hasInfo || hasPlugins) {
+                accordionOverview.style.display = 'block';
+                accordionOverview.classList.add('open');
+                const parts = [];
+                if (version) parts.push('v' + version);
+                if (theme) parts.push(theme);
+                if (pageBuilder) parts.push(pageBuilder);
+                overviewBadge.textContent = parts.length > 0 ? parts.join(' · ') : (hasPlugins ? plugins.length + ' plugins' : '');
+                overviewBadge.className = 'accordion-badge blue';
+
+                if (version) infoRows.innerHTML += `<div class="detail-row"><span class="label">WordPress Version</span><span class="value">${version}</span></div>`;
+                if (theme) infoRows.innerHTML += `<div class="detail-row"><span class="label">Active Theme</span><span class="value">${theme}</span></div>`;
+                if (pageBuilder) infoRows.innerHTML += `<div class="detail-row"><span class="label">Page Builder</span><span class="value">${pageBuilder}</span></div>`;
+
+                if (hasPlugins) {
+                    pluginsSection.style.display = 'block';
+                    plugins.forEach(p => { pluginsList.innerHTML += `<span class="plugin-tag">${p}</span>`; });
+                } else {
+                    pluginsSection.style.display = 'none';
+                }
             } else {
-                pluginsSection.style.display = 'none';
+                accordionOverview.style.display = 'none';
             }
 
-            // SSL section (WordPress only)
-            const sslSection = document.getElementById('sslSection');
+            // --- SSL / Domain accordion ---
+            const accordionSsl = document.getElementById('accordionSsl');
+            const sslBadge = document.getElementById('sslBadge');
             const sslRows = document.getElementById('sslRows');
             sslRows.innerHTML = '';
             if (isWordPress && ssl) {
-                sslSection.style.display = 'block';
+                accordionSsl.style.display = 'block';
                 const statusClass = ssl.valid ? (ssl.daysLeft != null && ssl.daysLeft < 30 ? 'expiring' : 'valid') : 'expired';
                 const statusText = ssl.valid ? (ssl.daysLeft != null && ssl.daysLeft < 30 ? 'Expiring Soon' : 'Valid') : 'Invalid / Expired';
+                const badgeColor = ssl.valid ? (ssl.daysLeft != null && ssl.daysLeft < 30 ? 'yellow' : 'green') : 'red';
+                sslBadge.textContent = statusText;
+                sslBadge.className = 'accordion-badge ' + badgeColor;
                 sslRows.innerHTML = `
                     <div class="detail-row"><span class="label">Status</span><span class="ssl-status ${statusClass}">${statusText}</span></div>
                     <div class="detail-row"><span class="label">Issuer</span><span class="value">${ssl.issuer}</span></div>
@@ -2052,19 +2159,36 @@
                     ${ssl.hsts ? `<div class="detail-row"><span class="label">HSTS</span><span class="value">Enabled</span></div>` : ''}
                 `;
             } else {
-                sslSection.style.display = 'none';
+                accordionSsl.style.display = 'none';
             }
 
-            // Security score section
-            const securitySection = document.getElementById('securitySection');
+            // --- PageSpeed accordion (WordPress only, shows loading) ---
+            const accordionPagespeed = document.getElementById('accordionPagespeed');
+            const psiBadge = document.getElementById('psiBadge');
+            if (isWordPress) {
+                accordionPagespeed.style.display = 'block';
+                psiBadge.textContent = 'Loading...';
+                psiBadge.className = 'accordion-badge blue';
+                document.getElementById('pagespeedLoading').style.display = 'block';
+                document.getElementById('pagespeedScores').style.display = 'none';
+            } else {
+                accordionPagespeed.style.display = 'none';
+            }
+
+            // --- Security Score accordion ---
+            const accordionSecurity = document.getElementById('accordionSecurity');
+            const securityBadge = document.getElementById('securityBadge');
             const securityFindings = document.getElementById('securityFindings');
             const securityGauge = document.getElementById('securityGauge');
             const suggestionsToggle = document.getElementById('suggestionsToggle');
             const securitySuggestions = document.getElementById('securitySuggestions');
             if (isWordPress && security && security.score != null && security.findings.length > 0) {
-                securitySection.style.display = 'block';
+                accordionSecurity.style.display = 'block';
                 const score = security.score;
                 const color = score >= 70 ? '#22c55e' : score >= 40 ? '#eab308' : '#ef4444';
+                const badgeColor = score >= 70 ? 'green' : score >= 40 ? 'yellow' : 'red';
+                securityBadge.textContent = score + '/100';
+                securityBadge.className = 'accordion-badge ' + badgeColor;
                 const circumference = 2 * Math.PI * 22;
                 const offset = circumference - (score / 100) * circumference;
                 securityGauge.innerHTML = `
@@ -2084,7 +2208,6 @@
                     </div>
                 `).join('');
 
-                // Suggestions for warn/bad findings
                 const actionable = security.findings.filter(f => f.suggestion && (f.level === 'warn' || f.level === 'bad'));
                 if (actionable.length > 0) {
                     suggestionsToggle.style.display = 'block';
@@ -2105,17 +2228,7 @@
                     securitySuggestions.innerHTML = '';
                 }
             } else {
-                securitySection.style.display = 'none';
-            }
-
-            // PageSpeed section (WordPress only, shows loading state)
-            const pagespeedSection = document.getElementById('pagespeedSection');
-            if (isWordPress) {
-                pagespeedSection.style.display = 'block';
-                document.getElementById('pagespeedLoading').style.display = 'block';
-                document.getElementById('pagespeedScores').style.display = 'none';
-            } else {
-                pagespeedSection.style.display = 'none';
+                accordionSecurity.style.display = 'none';
             }
 
             document.getElementById('shareBtn').classList.add('active');
