@@ -155,9 +155,50 @@
             flex-wrap: wrap;
         }
 
-        @media (max-width: 500px) {
-            .input-group input[type="text"] { width: 100%; }
-            .input-group button { width: 100%; }
+        @media (max-width: 600px) {
+            .card { padding: 24px 16px; border-radius: 12px; }
+            h1 { font-size: 22px; }
+            .subtitle { font-size: 12px; margin-bottom: 16px; }
+            .tabs { gap: 2px; padding: 3px; }
+            .tab { padding: 8px 8px; font-size: 12px; }
+            .input-group { gap: 8px; }
+            .input-group input[type="text"] { width: 100%; font-size: 14px; padding: 12px 14px; }
+            .input-group button { width: 100%; padding: 12px 20px; font-size: 14px; }
+            textarea { font-size: 13px; padding: 12px 14px; }
+            .bulk-actions { flex-wrap: wrap; }
+            .bulk-actions button { flex: 1 1 45%; padding: 10px 12px; font-size: 13px; }
+            .sub-tabs { gap: 2px; padding: 2px; }
+            .sub-tab { padding: 6px 8px; font-size: 12px; }
+            .detail-row { flex-wrap: wrap; gap: 2px; font-size: 13px; }
+            .detail-row .value { text-align: right; word-break: break-word; }
+            .accordion-header { padding: 12px 12px; }
+            .accordion-header-left span:first-child { font-size: 13px; }
+            .accordion-body { padding: 12px; }
+            .share-btn { font-size: 12px; padding: 8px 16px; }
+            .history-item { padding: 8px 10px; font-size: 12px; }
+            .history-meta { gap: 4px; }
+            .history-time { font-size: 10px; }
+            .bulk-actions-row { gap: 6px; }
+            .action-btn { padding: 8px 14px; font-size: 12px; }
+            .psi-gauge svg { width: 56px; height: 56px; }
+            .psi-gauge-text { font-size: 14px; }
+            .psi-gauge-label { font-size: 10px; }
+            .psi-audit-item { padding: 8px 10px; }
+            .psi-audit-title { font-size: 12px; }
+            .psi-section-header { padding: 10px 12px; font-size: 13px; }
+            .security-finding { font-size: 12px; }
+            .suggestions-toggle { font-size: 12px; padding: 8px 16px; }
+        }
+
+        @media (max-width: 380px) {
+            .card { padding: 16px 12px; }
+            h1 { font-size: 20px; }
+            .tab { padding: 7px 6px; font-size: 11px; }
+            .theme-toggle { width: 30px; height: 30px; font-size: 15px; padding: 6px; }
+            .psi-gauges { gap: 8px; }
+            .psi-gauge svg { width: 48px; height: 48px; }
+            .psi-gauge-text { font-size: 12px; }
+            .bulk-actions button { flex: 1 1 100%; }
         }
 
         input[type="text"] {
