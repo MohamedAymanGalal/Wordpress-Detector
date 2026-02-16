@@ -1043,6 +1043,70 @@
             white-space: pre-wrap;
             word-break: break-all;
         }
+        /* --- Print / Export PDF --- */
+        .print-header { display: none; }
+
+        @media print {
+            body { background: #fff !important; color: #222 !important; }
+            .container { max-width: 100%; box-shadow: none; padding: 0; }
+            .card { box-shadow: none; border: none; background: #fff; }
+
+            /* Hide non-report elements */
+            .header, .tabs, .tab-content:not(#singleTab),
+            .input-row, .loading, .error-msg, .url-warning,
+            #historyPanel, .share-btn, #exportPdfBtn,
+            .accordion-arrow, .suggestions-toggle, .suggestions-container,
+            .psi-arrow, #pagespeedLoading,
+            .theme-toggle, .toast, .bulk-results { display: none !important; }
+
+            /* Show print header */
+            .print-header {
+                display: block !important;
+                text-align: center;
+                margin-bottom: 16px;
+                padding-bottom: 12px;
+                border-bottom: 2px solid #333;
+            }
+            .print-header h2 { font-size: 20px; margin-bottom: 4px; color: #111; }
+            .print-header .print-url { font-size: 13px; color: #666; }
+            .print-header .print-date { font-size: 11px; color: #999; margin-top: 2px; }
+
+            /* Force results visible */
+            .results { display: block !important; }
+
+            /* Force all accordions open */
+            .accordion { display: block !important; border-color: #ddd !important; }
+            .accordion-body { display: block !important; }
+            .accordion-header { cursor: default; background: #f5f5f5 !important; color: #222 !important; }
+            .accordion-badge { color: #fff !important; }
+
+            /* Force PSI sub-sections open */
+            .psi-section-body { display: block !important; }
+
+            /* Readable colors for print */
+            .verdict { background: #f9f9f9 !important; border-color: #ccc !important; }
+            .verdict.is-wp { border-color: #22c55e !important; background: #f0fdf4 !important; }
+            .verdict.not-wp { border-color: #ef4444 !important; background: #fef2f2 !important; }
+            #verdictText { color: #111 !important; }
+            #confidenceText { color: #555 !important; }
+            .detail-row .label { color: #666 !important; }
+            .detail-row .value { color: #222 !important; }
+            .detail-section-label { color: #888 !important; border-color: #ddd !important; }
+            .plugin-tag { background: #eee !important; color: #333 !important; }
+            .psi-metric-item { background: #f9f9f9 !important; border-color: #ddd !important; }
+            .psi-metric-name { color: #666 !important; }
+            .psi-metric-val { color: #222 !important; }
+            .psi-gauge-label { color: #666 !important; }
+            .psi-audit-title { color: #222 !important; }
+            .psi-audit-desc { display: block !important; color: #666 !important; }
+            .security-finding { color: #222 !important; }
+            .security-finding div { color: #222 !important; }
+            .security-progress-wrapper { background: transparent !important; }
+
+            /* Page break control */
+            .accordion { page-break-inside: avoid; }
+            .verdict { page-break-after: avoid; }
+        }
     </style>
 </head>
 <body>
@@ -1078,6 +1142,11 @@
                 </div>
 
                 <div class="results" id="results">
+                    <div class="print-header">
+                        <h2>WP Inspector Report</h2>
+                        <div class="print-url" id="printUrl"></div>
+                        <div class="print-date" id="printDate"></div>
+                    </div>
                     <div class="verdict" id="verdict">
                         <div class="verdict-label">Result</div>
                         <div class="verdict-text" id="verdictText"></div>
@@ -1160,6 +1229,7 @@
                     </div>
 
                     <button class="share-btn" id="shareBtn" onclick="shareResults()">Share Results</button>
+                    <button class="share-btn" id="exportPdfBtn" onclick="exportPDF()" style="display:none">Export as PDF</button>
                 </div>
             </div>
 
@@ -2301,6 +2371,13 @@
             }
         }
 
+        function exportPDF() {
+            if (!lastScanResult) return;
+            document.getElementById('printUrl').textContent = lastScanResult.url;
+            document.getElementById('printDate').textContent = 'Report generated: ' + new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+            window.print();
+        }
+
         function copyToClipboard(text) {
             navigator.clipboard.writeText(text).then(() => {
                 showToast('Results copied to clipboard');
@@ -2436,6 +2513,7 @@
             document.getElementById('accordionPagespeed').style.display = 'none';
             document.getElementById('accordionSecurity').style.display = 'none';
             document.getElementById('shareBtn').classList.remove('active');
+            document.getElementById('exportPdfBtn').classList.remove('active');
 
             verdict.className = 'verdict';
             verdictText.textContent = 'Scanning...';
@@ -2673,6 +2751,7 @@
             }
 
             document.getElementById('shareBtn').classList.add('active');
+            document.getElementById('exportPdfBtn').classList.add('active');
             verdictText.style.color = '';
             results.classList.add('active');
         }
