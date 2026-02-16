@@ -1333,6 +1333,28 @@
             }
         }
 
+        // --- Domain expiry check (RDAP) ---
+        async function checkDomainExpiry(domain) {
+            try {
+                // Strip subdomains to get registrable domain (e.g. www.example.co.uk -> example.co.uk)
+                const parts = domain.split('.');
+                const registrable = parts.length > 2 ? parts.slice(-2).join('.') : domain;
+                const rdapUrl = `https://rdap.org/domain/${registrable}`;
+                const resp = await proxyFetch(rdapUrl);
+                const data = JSON.parse(await resp.text());
+                const events = data.events || [];
+                const expiry = events.find(e => e.eventAction === 'expiration');
+                const registration = events.find(e => e.eventAction === 'registration');
+                return {
+                    expiryDate: expiry ? expiry.eventDate.split('T')[0] : null,
+                    registrationDate: registration ? registration.eventDate.split('T')[0] : null,
+                    daysUntilExpiry: expiry ? Math.floor((new Date(expiry.eventDate) - new Date()) / (1000 * 60 * 60 * 24)) : null
+                };
+            } catch {
+                return null;
+            }
+        }
+
         // --- PageSpeed Insights ---
         const PSI_API_KEY = 'AIzaSyBEa44t8LE6HFv1r2tTe8MbpQ1NIbsSEVw';
 
@@ -1600,9 +1622,10 @@
             let theme = null;
             let plugins = new Set();
 
-            // Start SSL check in parallel with main fetch
+            // Start SSL + domain expiry checks in parallel with main fetch
             const domain = baseUrl.hostname;
             const sslPromise = checkSSL(domain);
+            const domainExpiryPromise = checkDomainExpiry(domain);
 
             const html = await fetchText(baseUrl.origin);
 
@@ -1708,13 +1731,13 @@
             const isWordPress = (strongSignals >= 1 && passed >= 2) || passed >= 3;
             const confidence = Math.round((passed / total) * 100);
 
-            // Await SSL result
+            // Await SSL + domain expiry results
             const ssl = await sslPromise;
+            const domainExpiry = await domainExpiryPromise;
 
             // Update security with final isWordPress
             security.isWordPress = isWordPress;
             if (!isWordPress) {
-                // For non-WP sites, only show SSL-related findings
                 security.findings = security.findings.filter(f => f.category === 'ssl');
                 security.score = security.findings.length > 0 ? Math.round(security.findings.reduce((s, f) => s + f.points, 0) / security.findings.reduce((s, f) => s + f.maxPoints, 0) * 100) : null;
             }
@@ -1729,6 +1752,7 @@
                 pageBuilder,
                 plugins: [...plugins],
                 ssl,
+                domainExpiry,
                 security
             };
         }
@@ -1743,6 +1767,7 @@
 
             const domain = baseUrl.hostname;
             const sslPromise = checkSSL(domain);
+            const domainExpiryPromise = checkDomainExpiry(domain);
 
             const html = await fetchText(baseUrl.origin);
 
@@ -1824,6 +1849,7 @@
             const confidence = Math.round((passed / total) * 100);
 
             const ssl = await sslPromise;
+            const domainExpiry = await domainExpiryPromise;
 
             const security = buildSecurityData({
                 ssl, version, versionExposed: !!version,
@@ -1839,7 +1865,7 @@
                 security.score = security.findings.length > 0 ? Math.round(security.findings.reduce((s, f) => s + f.points, 0) / security.findings.reduce((s, f) => s + f.maxPoints, 0) * 100) : null;
             }
 
-            return { url: baseUrl.origin, isWordPress, confidence, checks, version, theme, pageBuilder, plugins: [...plugins], ssl, security };
+            return { url: baseUrl.origin, isWordPress, confidence, checks, version, theme, pageBuilder, plugins: [...plugins], ssl, security, domainExpiry };
         }
 
         // --- Share results ---
@@ -1857,6 +1883,9 @@
             if (r.ssl) {
                 const sslStatus = r.ssl.valid ? 'Valid' : 'Expired';
                 lines.push(`SSL: ${sslStatus} (${r.ssl.issuer}${r.ssl.validTill ? ', expires ' + r.ssl.validTill : ''})`);
+            }
+            if (r.domainExpiry && r.domainExpiry.expiryDate) {
+                lines.push(`Domain Expires: ${r.domainExpiry.expiryDate}${r.domainExpiry.daysUntilExpiry != null ? ' (' + r.domainExpiry.daysUntilExpiry + ' days)' : ''}`);
             }
             if (r.security && r.security.score != null) {
                 lines.push(`Security Score: ${r.security.score}/100`);
@@ -1905,6 +1934,7 @@
                 checks: result.checks || {},
                 ssl: result.ssl || null,
                 security: result.security || null,
+                domainExpiry: result.domainExpiry || null,
                 timestamp: Date.now()
             });
             // Keep last 50 entries
@@ -1949,7 +1979,7 @@
             // Show saved results directly without re-scanning
             if (item.checks && Object.keys(item.checks).length > 0) {
                 lastScanResult = item;
-                displayResults(item.isWordPress, item.confidence, item.checks, item.version, item.theme, item.pageBuilder || null, item.plugins || [], null, item.ssl || null, item.security || null);
+                displayResults(item.isWordPress, item.confidence, item.checks, item.version, item.theme, item.pageBuilder || null, item.plugins || [], null, item.ssl || null, item.security || null, item.domainExpiry || null);
                 if (item.isWordPress) {
                     fetchPageSpeed(item.url).then(psi => renderPageSpeed(psi));
                 }
@@ -2058,7 +2088,7 @@
                 result.scanTime = elapsed;
                 saveToHistory(result);
                 lastScanResult = result;
-                displayResults(result.isWordPress, result.confidence, result.checks, result.version, result.theme, result.pageBuilder, result.plugins, elapsed, result.ssl, result.security);
+                displayResults(result.isWordPress, result.confidence, result.checks, result.version, result.theme, result.pageBuilder, result.plugins, elapsed, result.ssl, result.security, result.domainExpiry);
 
                 // Fetch PageSpeed in background for WordPress sites
                 if (result.isWordPress) {
@@ -2095,7 +2125,7 @@
             el.classList.add('active');
         }
 
-        function displayResults(isWordPress, confidence, checks, version, theme, pageBuilder, plugins, scanTime, ssl, security) {
+        function displayResults(isWordPress, confidence, checks, version, theme, pageBuilder, plugins, scanTime, ssl, security, domainExpiry) {
             const results = document.getElementById('results');
             const verdict = document.getElementById('verdict');
             const verdictText = document.getElementById('verdictText');
@@ -2153,12 +2183,22 @@
                 const badgeColor = ssl.valid ? (ssl.daysLeft != null && ssl.daysLeft < 30 ? 'yellow' : 'green') : 'red';
                 sslBadge.textContent = statusText;
                 sslBadge.className = 'accordion-badge ' + badgeColor;
+                let domainExpiryHtml = '';
+                if (domainExpiry) {
+                    if (domainExpiry.registrationDate) domainExpiryHtml += `<div class="detail-row"><span class="label">Domain Registered</span><span class="value">${domainExpiry.registrationDate}</span></div>`;
+                    if (domainExpiry.expiryDate) {
+                        const daysLeft = domainExpiry.daysUntilExpiry;
+                        const expiryClass = daysLeft != null && daysLeft < 30 ? 'expiring' : (daysLeft != null && daysLeft < 0 ? 'expired' : 'valid');
+                        domainExpiryHtml += `<div class="detail-row"><span class="label">Domain Expires</span><span class="ssl-status ${expiryClass}">${domainExpiry.expiryDate}${daysLeft != null ? ' (' + daysLeft + ' days)' : ''}</span></div>`;
+                    }
+                }
                 sslRows.innerHTML = `
                     <div class="detail-row"><span class="label">Status</span><span class="ssl-status ${statusClass}">${statusText}</span></div>
                     <div class="detail-row"><span class="label">Issuer</span><span class="value">${ssl.issuer}</span></div>
                     ${ssl.validTill ? `<div class="detail-row"><span class="label">Expires</span><span class="value">${ssl.validTill}</span></div>` : ''}
                     ${ssl.daysLeft != null ? `<div class="detail-row"><span class="label">Days Left</span><span class="ssl-status ${statusClass}">${ssl.daysLeft} days</span></div>` : ''}
                     ${ssl.hsts ? `<div class="detail-row"><span class="label">HSTS</span><span class="value">Enabled</span></div>` : ''}
+                    ${domainExpiryHtml}
                 `;
             } else {
                 accordionSsl.style.display = 'none';
