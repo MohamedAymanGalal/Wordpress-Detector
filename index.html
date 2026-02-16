@@ -1346,12 +1346,40 @@
         // --- Domain expiry check (RDAP) ---
         async function checkDomainExpiry(domain) {
             try {
-                // Strip subdomains to get registrable domain (e.g. www.example.co.uk -> example.co.uk)
+                // Strip subdomains to get registrable domain
                 const parts = domain.split('.');
+                const tld = parts[parts.length - 1];
                 const registrable = parts.length > 2 ? parts.slice(-2).join('.') : domain;
-                const rdapUrl = `https://rdap.org/domain/${registrable}`;
-                const resp = await proxyFetch(rdapUrl);
-                const data = JSON.parse(await resp.text());
+
+                // Try multiple RDAP servers directly (they support CORS)
+                const rdapServers = [
+                    `https://rdap.verisign.com/com/v1/domain/${registrable}`,
+                    `https://rdap.verisign.com/net/v1/domain/${registrable}`,
+                    `https://rdap.org/domain/${registrable}`
+                ];
+
+                // Pick the right server based on TLD
+                let rdapUrl;
+                if (tld === 'com') rdapUrl = rdapServers[0];
+                else if (tld === 'net') rdapUrl = rdapServers[1];
+                else rdapUrl = rdapServers[2];
+
+                // Try direct fetch first (many RDAP servers support CORS)
+                let data;
+                try {
+                    const resp = await fetch(rdapUrl, { headers: { 'Accept': 'application/rdap+json,application/json' } });
+                    if (resp.ok) {
+                        data = await resp.json();
+                    } else {
+                        throw new Error('Direct fetch failed');
+                    }
+                } catch {
+                    // Fallback to proxy
+                    const resp = await proxyFetch(rdapUrl);
+                    const text = await resp.text();
+                    data = JSON.parse(text);
+                }
+
                 const events = data.events || [];
                 const expiry = events.find(e => e.eventAction === 'expiration');
                 const registration = events.find(e => e.eventAction === 'registration');
