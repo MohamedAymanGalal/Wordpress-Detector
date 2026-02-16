@@ -1052,7 +1052,7 @@
             .card { box-shadow: none; border: none; background: #fff; }
 
             /* Hide non-report elements */
-            .header, .tabs, .tab-content:not(#singleTab),
+            .header, .tabs, .tab-content:not(#tab-single),
             .input-row, .loading, .error-msg, .url-warning,
             #historyPanel, .share-btn, #exportPdfBtn,
             .accordion-arrow, .suggestions-toggle, .suggestions-container,
@@ -1072,6 +1072,7 @@
             .print-header .print-date { font-size: 11px; color: #999; margin-top: 2px; }
 
             /* Force results visible */
+            #tab-single { display: block !important; }
             .results { display: block !important; }
 
             /* Force all accordions open */
