@@ -2485,7 +2485,7 @@
                 }
             } catch (err) {
                 document.getElementById('results').classList.remove('active');
-                showError('errorMsg', 'Could not fetch the website. Make sure the URL is correct and the site is accessible.');
+                showError('errorMsg', 'Could not fetch the website. Make sure the URL is correct and the site is accessible. (' + (err.message || 'Unknown error') + ')');
             }
 
             clearInterval(timerInterval);
