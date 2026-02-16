@@ -1226,8 +1226,9 @@
 
     <script>
         const PROXIES = [
-            { url: 'https://api.allorigins.win/raw?url=', encode: true },
-            { url: 'https://api.codetabs.com/v1/proxy/?quest=', encode: false }
+            { url: 'https://api.codetabs.com/v1/proxy/?quest=', encode: false },
+            { url: 'https://corsproxy.org/?url=', encode: true },
+            { url: 'https://api.allorigins.win/raw?url=', encode: true }
         ];
 
         // --- Theme toggle ---
@@ -2015,17 +2016,6 @@
 
             checks['Plugins Detected'] = plugins.size > 0;
 
-            // Build security data
-            const security = buildSecurityData({
-                ssl, isWordPress: null, // computed below
-                version, versionExposed: !!version,
-                xmlrpcOpen: checks['XML-RPC'],
-                loginExposed: checks['wp-login.php'],
-                readmeExposed: !!readmeExposed,
-                directoryListing: !!directoryListing,
-                feedExposesVersion: !!feedExposesVersion
-            });
-
             const passed = Object.values(checks).filter(Boolean).length;
             const total = Object.keys(checks).length;
             const strongSignals = [
@@ -2041,6 +2031,17 @@
             // Await SSL + domain expiry results
             const ssl = await sslPromise;
             const domainExpiry = await domainExpiryPromise;
+
+            // Build security data (after ssl is resolved)
+            const security = buildSecurityData({
+                ssl,
+                version, versionExposed: !!version,
+                xmlrpcOpen: checks['XML-RPC'],
+                loginExposed: checks['wp-login.php'],
+                readmeExposed: !!readmeExposed,
+                directoryListing: !!directoryListing,
+                feedExposesVersion: !!feedExposesVersion
+            });
 
             // Update security with final isWordPress
             security.isWordPress = isWordPress;
@@ -2288,7 +2289,7 @@
                 lastScanResult = item;
                 displayResults(item.isWordPress, item.confidence, item.checks, item.version, item.theme, item.pageBuilder || null, item.plugins || [], null, item.ssl || null, item.security || null, item.domainExpiry || null);
                 if (item.isWordPress) {
-                    fetchPageSpeed(item.url).then(psi => renderPageSpeed(psi));
+                    fetchPageSpeed(item.url).then(psi => renderPageSpeed(psi)).catch(() => renderPageSpeed(null));
                 }
             } else {
                 // Old history entry without checks — re-scan
@@ -2399,7 +2400,7 @@
 
                 // Fetch PageSpeed in background for WordPress sites
                 if (result.isWordPress) {
-                    fetchPageSpeed(result.url).then(psi => renderPageSpeed(psi));
+                    fetchPageSpeed(result.url).then(psi => renderPageSpeed(psi)).catch(() => renderPageSpeed(null));
                 }
             } catch (err) {
                 document.getElementById('results').classList.remove('active');
