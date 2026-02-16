@@ -1382,6 +1382,13 @@
 
         let fetchTimeout = 15000;
 
+        // Detects proxy error/default pages that aren't real content
+        function isProxyJunk(text) {
+            if (text.length < 100) return true;
+            const start = text.substring(0, 600).toLowerCase();
+            return /cors[\s-]*proxy|do not use this proxy|rate[\s-]*limit exceeded|upgrade.*plan/i.test(start);
+        }
+
         async function proxyFetch(url) {
             // Race all proxies — first to return valid content wins
             const controllers = [];
@@ -1393,9 +1400,7 @@
                     .then(async resp => {
                         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
                         const text = await resp.text();
-                        // Reject tiny responses — real websites are always > 1KB
-                        // This catches fake proxy pages that return their own small HTML
-                        if (text.length < 1000) throw new Error('Response too small — likely proxy error page');
+                        if (isProxyJunk(text)) throw new Error('Proxy returned junk page');
                         controllers.forEach((c, i) => { if (i !== idx) c.abort(); });
                         return text;
                     });
