@@ -1431,6 +1431,7 @@
             try {
                 const sslUrl = `https://ssl-checker.io/api/v1/check/${domain}`;
                 const text = await proxyFetch(sslUrl);
+                console.log('[WP Inspector] SSL response length:', text.length, '| Start:', text.substring(0, 100));
                 const data = JSON.parse(text);
                 const r = data.result || data;
                 return {
