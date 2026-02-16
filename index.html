@@ -1136,6 +1136,8 @@
                                 <div id="psiOpportunities"></div>
                                 <div id="psiDiagnostics"></div>
                                 <div id="psiPassed"></div>
+                                <button class="suggestions-toggle" id="psiSuggestionsToggle" onclick="togglePsiSuggestions()" style="display:none">How to Improve Your Page Speed</button>
+                                <div id="psiSuggestionsContainer" class="suggestions-container"></div>
                             </div>
                         </div>
                     </div>
@@ -1572,7 +1574,7 @@
                     .filter(ref => ref.group === 'load-opportunities' && audits[ref.id] && audits[ref.id].score !== null && audits[ref.id].score < 1)
                     .map(ref => {
                         const a = audits[ref.id];
-                        return { title: a.title, displayValue: a.displayValue || '', description: a.description || '', score: a.score, savings: a.details?.overallSavingsMs ? (a.details.overallSavingsMs / 1000).toFixed(1) + ' s' : (a.details?.overallSavingsBytes ? (a.details.overallSavingsBytes / 1024).toFixed(0) + ' KiB' : '') };
+                        return { _id: ref.id, title: a.title, displayValue: a.displayValue || '', description: a.description || '', score: a.score, savings: a.details?.overallSavingsMs ? (a.details.overallSavingsMs / 1000).toFixed(1) + ' s' : (a.details?.overallSavingsBytes ? (a.details.overallSavingsBytes / 1024).toFixed(0) + ' KiB' : '') };
                     })
                     .sort((a, b) => a.score - b.score);
 
@@ -1581,7 +1583,7 @@
                     .filter(ref => ref.group === 'diagnostics' && audits[ref.id] && audits[ref.id].score !== null && audits[ref.id].score < 1)
                     .map(ref => {
                         const a = audits[ref.id];
-                        return { title: a.title, displayValue: a.displayValue || '', description: a.description || '', score: a.score };
+                        return { _id: ref.id, title: a.title, displayValue: a.displayValue || '', description: a.description || '', score: a.score };
                     })
                     .sort((a, b) => a.score - b.score);
 
@@ -1639,6 +1641,8 @@
             if (!psi) {
                 scoresEl.style.display = 'none';
                 accordion.style.display = 'none';
+                document.getElementById('psiSuggestionsToggle').style.display = 'none';
+                document.getElementById('psiSuggestionsContainer').innerHTML = '';
                 return;
             }
 
@@ -1756,6 +1760,86 @@
                 </div>`;
             } else {
                 passedEl.innerHTML = '';
+            }
+
+            // --- How to Improve suggestions ---
+            const psiSuggestionsToggle = document.getElementById('psiSuggestionsToggle');
+            const psiSuggestionsContainer = document.getElementById('psiSuggestionsContainer');
+
+            // WordPress-specific fix suggestions mapped to common Lighthouse audit IDs
+            const wpSpeedTips = {
+                'render-blocking-resources': { text: 'Defer or async non-critical CSS/JS. Use a plugin like Autoptimize or WP Rocket to combine and defer render-blocking resources.', code: "add_filter('script_loader_tag', function($tag, $handle) {\n  return str_replace(' src', ' defer src', $tag);\n}, 10, 2);" },
+                'unused-css-rules': { text: 'Remove unused CSS with a plugin like PurifyCSS or Asset CleanUp. WP Rocket and LiteSpeed Cache also offer unused CSS removal.', code: null },
+                'unused-javascript': { text: 'Dequeue unused scripts on pages that don\'t need them. Use Asset CleanUp or Perfmatters to disable scripts per page.', code: "add_action('wp_enqueue_scripts', function() {\n  if (!is_page('contact')) wp_dequeue_script('contact-form-7');\n});" },
+                'unminified-css': { text: 'Minify CSS files using Autoptimize, WP Rocket, or LiteSpeed Cache. Enable CSS minification in your caching plugin settings.', code: null },
+                'unminified-javascript': { text: 'Minify JavaScript files using Autoptimize, WP Rocket, or LiteSpeed Cache. Enable JS minification in your caching plugin settings.', code: null },
+                'uses-responsive-images': { text: 'Use responsive images with srcset. WordPress generates multiple sizes automatically — ensure your theme uses wp_get_attachment_image() instead of hardcoded img tags.', code: null },
+                'offscreen-images': { text: 'Lazy-load offscreen images. WordPress 5.5+ has native lazy loading. For more control, use a plugin like Smush or ShortPixel.', code: "// WordPress adds loading=\"lazy\" by default\n// To force it on custom images:\n<img src=\"image.jpg\" loading=\"lazy\" alt=\"\">" },
+                'uses-optimized-images': { text: 'Compress images with ShortPixel, Imagify, or Smush. Convert to WebP format for 25-35% smaller files. Enable WebP in your image optimization plugin.', code: null },
+                'modern-image-formats': { text: 'Serve images in WebP or AVIF format. Use ShortPixel, Imagify, or EWWW Image Optimizer to auto-convert uploads to WebP.', code: null },
+                'uses-text-compression': { text: 'Enable GZIP or Brotli compression on your server. Most caching plugins enable this, or add to .htaccess:', code: "# Enable GZIP compression\n<IfModule mod_deflate.c>\n  AddOutputFilterByType DEFLATE text/html text/css application/javascript\n</IfModule>" },
+                'uses-long-cache-ttl': { text: 'Set long browser cache expiry headers. Use WP Rocket, W3 Total Cache, or add to .htaccess:', code: "# Cache static assets for 1 year\n<IfModule mod_expires.c>\n  ExpiresActive On\n  ExpiresByType image/jpeg \"access plus 1 year\"\n  ExpiresByType text/css \"access plus 1 year\"\n  ExpiresByType application/javascript \"access plus 1 year\"\n</IfModule>" },
+                'server-response-time': { text: 'Reduce server response time (TTFB). Use page caching (WP Rocket, LiteSpeed Cache, WP Super Cache), upgrade hosting, or enable object caching with Redis.', code: null },
+                'dom-size': { text: 'Reduce DOM size by simplifying page layouts. Avoid deeply nested page builder sections. Use fewer widgets and lighter themes.', code: null },
+                'font-display': { text: 'Add font-display: swap to your @font-face rules so text is visible while fonts load. Use OMGF or Perfmatters to optimize Google Fonts.', code: "@font-face {\n  font-family: 'YourFont';\n  font-display: swap;\n  src: url('font.woff2') format('woff2');\n}" },
+                'total-byte-weight': { text: 'Reduce total page weight. Compress images, minify CSS/JS, remove unused plugins, and enable GZIP. Aim for under 1.5 MB total.', code: null },
+                'mainthread-work-breakdown': { text: 'Reduce main thread work by deferring non-critical JavaScript, reducing DOM complexity, and minimizing CSS recalculations. Use a caching plugin to reduce PHP execution.', code: null },
+                'bootup-time': { text: 'Reduce JavaScript execution time. Defer non-critical scripts, remove unused plugins, and avoid heavy JavaScript-based page builders where possible.', code: null },
+                'third-party-summary': { text: 'Reduce impact of third-party scripts (analytics, ads, chat widgets). Load them asynchronously or delay until user interaction. Use Flying Scripts or Perfmatters.', code: null },
+                'largest-contentful-paint-element': { text: 'Optimize your LCP element (usually hero image or heading). Preload hero images, inline critical CSS, and avoid lazy-loading above-the-fold content.', code: '<link rel="preload" as="image" href="hero-image.webp">' },
+                'layout-shift-elements': { text: 'Fix layout shifts by setting explicit width/height on images and embeds, reserving space for ads, and avoiding dynamic content injection above the fold.', code: '<img src="photo.jpg" width="800" height="450" alt="">' },
+                'uses-rel-preconnect': { text: 'Add preconnect hints for third-party origins (Google Fonts, CDNs, analytics). This reduces DNS/TLS time.', code: '<link rel="preconnect" href="https://fonts.googleapis.com">\n<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>' },
+                'critical-request-chains': { text: 'Break critical request chains by inlining critical CSS, preloading key resources, and deferring non-critical assets. Use WP Rocket\'s "Optimize CSS Delivery" feature.', code: null },
+                'redirects': { text: 'Minimize redirects. Ensure your URLs resolve directly without chains of redirects. Fix mixed HTTP/HTTPS redirects in Settings > General.', code: null },
+                'efficient-animated-content': { text: 'Replace GIFs with video formats (MP4/WebM) for animated content. Videos are significantly smaller and perform better.', code: '<video autoplay loop muted playsinline>\n  <source src="animation.webm" type="video/webm">\n  <source src="animation.mp4" type="video/mp4">\n</video>' },
+                'duplicated-javascript': { text: 'Remove duplicate JavaScript modules. This often happens with page builders loading the same library multiple times. Use Asset CleanUp to identify duplicates.', code: null },
+                'legacy-javascript': { text: 'Avoid serving legacy JavaScript to modern browsers. Use Autoptimize or WP Rocket to serve modern bundles with proper browserslist configuration.', code: null },
+            };
+
+            // Match opportunities + diagnostics to WP tips by audit ID
+            const allIssues = [...(psi.opportunities || []), ...(psi.diagnostics || [])];
+            const suggestions = [];
+            const seenTips = new Set();
+
+            for (const issue of allIssues) {
+                if (issue._id && wpSpeedTips[issue._id] && !seenTips.has(issue._id)) {
+                    seenTips.add(issue._id);
+                    suggestions.push({ title: issue.title, savings: issue.savings || '', ...wpSpeedTips[issue._id] });
+                }
+            }
+
+            if (suggestions.length > 0) {
+                psiSuggestionsToggle.style.display = 'block';
+                psiSuggestionsToggle.classList.remove('open');
+                psiSuggestionsContainer.classList.remove('active');
+                psiSuggestionsContainer.innerHTML = suggestions.map(s => `
+                    <div class="suggestion-card">
+                        <div class="suggestion-card-header">
+                            <span class="sf-icon warn">!</span>
+                            <span class="suggestion-card-title">${s.title}${s.savings ? ' — ' + s.savings : ''}</span>
+                        </div>
+                        <div class="suggestion-card-text">${s.text}${s.code ? `<code class="suggestion-code">${s.code}</code>` : ''}</div>
+                    </div>
+                `).join('');
+            } else {
+                psiSuggestionsToggle.style.display = 'none';
+                psiSuggestionsContainer.classList.remove('active');
+                psiSuggestionsContainer.innerHTML = '';
+            }
+        }
+
+        function togglePsiSuggestions() {
+            const btn = document.getElementById('psiSuggestionsToggle');
+            const container = document.getElementById('psiSuggestionsContainer');
+            const isOpen = container.classList.contains('active');
+            if (isOpen) {
+                container.classList.remove('active');
+                btn.classList.remove('open');
+                btn.textContent = 'How to Improve Your Page Speed';
+            } else {
+                container.classList.add('active');
+                btn.classList.add('open');
+                btn.textContent = 'Hide Suggestions';
             }
         }
 
