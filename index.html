@@ -319,6 +319,16 @@
         .detail-row .label { color: var(--text-sub); }
         .detail-row .value { color: var(--text-bright); font-weight: 500; }
 
+        .detail-section-label {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+            padding: 10px 0 2px;
+            border-top: 1px solid var(--border);
+        }
+        .detail-section-label:first-child { border-top: none; padding-top: 0; }
 
         .plugins-list {
             display: flex;
@@ -2185,20 +2195,21 @@
                 sslBadge.className = 'accordion-badge ' + badgeColor;
                 let domainExpiryHtml = '';
                 if (domainExpiry) {
-                    if (domainExpiry.registrationDate) domainExpiryHtml += `<div class="detail-row"><span class="label">Domain Registered</span><span class="value">${domainExpiry.registrationDate}</span></div>`;
+                    if (domainExpiry.registrationDate) domainExpiryHtml += `<div class="detail-row"><span class="label">Registered</span><span class="value">${domainExpiry.registrationDate}</span></div>`;
                     if (domainExpiry.expiryDate) {
                         const daysLeft = domainExpiry.daysUntilExpiry;
                         const expiryClass = daysLeft != null && daysLeft < 30 ? 'expiring' : (daysLeft != null && daysLeft < 0 ? 'expired' : 'valid');
-                        domainExpiryHtml += `<div class="detail-row"><span class="label">Domain Expires</span><span class="ssl-status ${expiryClass}">${domainExpiry.expiryDate}${daysLeft != null ? ' (' + daysLeft + ' days)' : ''}</span></div>`;
+                        domainExpiryHtml += `<div class="detail-row"><span class="label">Expires</span><span class="ssl-status ${expiryClass}">${domainExpiry.expiryDate}${daysLeft != null ? ' (' + daysLeft + ' days)' : ''}</span></div>`;
                     }
                 }
                 sslRows.innerHTML = `
+                    <div class="detail-section-label">SSL Certificate</div>
                     <div class="detail-row"><span class="label">Status</span><span class="ssl-status ${statusClass}">${statusText}</span></div>
                     <div class="detail-row"><span class="label">Issuer</span><span class="value">${ssl.issuer}</span></div>
                     ${ssl.validTill ? `<div class="detail-row"><span class="label">Expires</span><span class="value">${ssl.validTill}</span></div>` : ''}
                     ${ssl.daysLeft != null ? `<div class="detail-row"><span class="label">Days Left</span><span class="ssl-status ${statusClass}">${ssl.daysLeft} days</span></div>` : ''}
                     ${ssl.hsts ? `<div class="detail-row"><span class="label">HSTS</span><span class="value">Enabled</span></div>` : ''}
-                    ${domainExpiryHtml}
+                    ${domainExpiryHtml ? `<div class="detail-section-label">Domain Registration</div>${domainExpiryHtml}` : ''}
                 `;
             } else {
                 accordionSsl.style.display = 'none';
