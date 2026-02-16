@@ -2159,6 +2159,7 @@
             const domainExpiryPromise = checkDomainExpiry(domain);
 
             const html = await fetchText(baseUrl.origin);
+            console.log('[WP Inspector] Fetched HTML length:', html.length, '| First 200 chars:', html.substring(0, 200));
 
             // HTML-based checks — resolve immediately
             const generatorMatch = html.match(/<meta[^>]+name=["']generator["'][^>]+content=["']([^"']*wordpress[^"']*)["']/i)
