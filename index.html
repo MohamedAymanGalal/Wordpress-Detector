@@ -1229,7 +1229,7 @@
     <script>
         const PROXIES = [
             { url: 'https://api.codetabs.com/v1/proxy/?quest=', encode: false },
-            { url: 'https://api.allorigins.win/raw?url=', encode: true }
+            { url: 'https://cors-get-proxy.sirjosh.workers.dev/?url=', encode: false }
         ];
 
         // --- Theme toggle ---
@@ -1382,30 +1382,31 @@
 
         let fetchTimeout = 15000;
 
-        // Known patterns that indicate a proxy returned its own page instead of the target
-        const PROXY_ERROR_PATTERNS = /cors\s*proxy|access denied|rate limit|upgrade.*plan|do not use this proxy|cloudflare|error occurred.*proxy/i;
-
         async function proxyFetch(url) {
-            // Try each proxy sequentially — validate response before accepting
-            for (const proxy of PROXIES) {
-                try {
-                    const controller = new AbortController();
-                    const timer = setTimeout(() => controller.abort(), fetchTimeout);
-                    const proxyUrl = proxy.url + (proxy.encode ? encodeURIComponent(url) : url);
-                    const resp = await fetch(proxyUrl, { signal: controller.signal });
-                    clearTimeout(timer);
-                    if (!resp.ok) continue;
+            // Race all proxies in parallel — first successful response wins
+            const controllers = [];
+            const promises = PROXIES.map((proxy, idx) => {
+                const controller = new AbortController();
+                controllers.push(controller);
+                const proxyUrl = proxy.url + (proxy.encode ? encodeURIComponent(url) : url);
+                return fetch(proxyUrl, { signal: controller.signal })
+                    .then(resp => {
+                        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                        controllers.forEach((c, i) => { if (i !== idx) c.abort(); });
+                        return resp;
+                    });
+            });
 
-                    // Validate: clone and peek at first 500 chars to catch fake proxy pages
-                    const clone = resp.clone();
-                    const peek = await clone.text().then(t => t.substring(0, 500));
-                    if (peek.length < 20) continue; // too short — empty/error
-                    if (PROXY_ERROR_PATTERNS.test(peek)) continue; // proxy's own page
+            const timeoutPromise = new Promise((_, reject) => {
+                setTimeout(() => {
+                    controllers.forEach(c => c.abort());
+                    reject(new Error('Timeout'));
+                }, fetchTimeout);
+            });
 
-                    return resp;
-                } catch { /* try next proxy */ }
-            }
-            throw new Error('All proxies failed');
+            return Promise.any([...promises, timeoutPromise].map(p =>
+                p instanceof Promise ? p : Promise.reject(p)
+            )).catch(() => { throw new Error('All proxies failed'); });
         }
 
         async function fetchText(url) {
