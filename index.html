@@ -831,29 +831,34 @@
         .psi-metric-value { font-weight: 500; }
 
         /* Security Score */
-        .security-score-header {
+        .security-progress-wrapper {
+            margin-bottom: 14px;
+        }
+        .security-progress-header {
             display: flex;
-            align-items: center;
             justify-content: space-between;
-            margin-bottom: 12px;
-        }
-        .security-gauge {
-            position: relative;
-            width: 56px;
-            height: 56px;
-            flex-shrink: 0;
-        }
-        .security-gauge svg { transform: rotate(-90deg); }
-        .security-gauge-bg { fill: none; stroke: var(--border); stroke-width: 5; }
-        .security-gauge-fill { fill: none; stroke-width: 5; stroke-linecap: round; transition: stroke-dashoffset 0.6s ease, stroke 0.3s; }
-        .security-gauge-text {
-            position: absolute;
-            inset: 0;
-            display: flex;
             align-items: center;
-            justify-content: center;
-            font-size: 15px;
+            margin-bottom: 6px;
+        }
+        .security-progress-score {
+            font-size: 20px;
             font-weight: 700;
+        }
+        .security-progress-label {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+        .security-progress-bar {
+            width: 100%;
+            height: 10px;
+            background: var(--border);
+            border-radius: 5px;
+            overflow: hidden;
+        }
+        .security-progress-fill {
+            height: 100%;
+            border-radius: 5px;
+            transition: width 0.6s ease;
         }
         .security-finding {
             display: flex;
@@ -1040,10 +1045,7 @@
                             <span class="accordion-arrow">&#9660;</span>
                         </div>
                         <div class="accordion-body">
-                            <div class="security-score-header">
-                                <div></div>
-                                <div class="security-gauge" id="securityGauge"></div>
-                            </div>
+                            <div id="securityProgressBar"></div>
                             <div id="securityFindings"></div>
                             <button class="suggestions-toggle" id="suggestionsToggle" onclick="toggleSuggestions()" style="display:none">How to Improve Your Score</button>
                             <div id="securitySuggestions" class="suggestions-container"></div>
@@ -2179,7 +2181,7 @@
             const accordionSecurity = document.getElementById('accordionSecurity');
             const securityBadge = document.getElementById('securityBadge');
             const securityFindings = document.getElementById('securityFindings');
-            const securityGauge = document.getElementById('securityGauge');
+            const securityBar = document.getElementById('securityProgressBar');
             const suggestionsToggle = document.getElementById('suggestionsToggle');
             const securitySuggestions = document.getElementById('securitySuggestions');
             if (isWordPress && security && security.score != null && security.findings.length > 0) {
@@ -2189,14 +2191,16 @@
                 const badgeColor = score >= 70 ? 'green' : score >= 40 ? 'yellow' : 'red';
                 securityBadge.textContent = score + '/100';
                 securityBadge.className = 'accordion-badge ' + badgeColor;
-                const circumference = 2 * Math.PI * 22;
-                const offset = circumference - (score / 100) * circumference;
-                securityGauge.innerHTML = `
-                    <svg width="56" height="56" viewBox="0 0 56 56">
-                        <circle class="security-gauge-bg" cx="28" cy="28" r="22"/>
-                        <circle class="security-gauge-fill" cx="28" cy="28" r="22" stroke="${color}" stroke-dasharray="${circumference}" stroke-dashoffset="${offset}"/>
-                    </svg>
-                    <div class="security-gauge-text" style="color:${color}">${score}</div>
+                securityBar.innerHTML = `
+                    <div class="security-progress-wrapper">
+                        <div class="security-progress-header">
+                            <span class="security-progress-score" style="color:${color}">${score}/100</span>
+                            <span class="security-progress-label">${score >= 70 ? 'Good' : score >= 40 ? 'Needs Work' : 'Poor'}</span>
+                        </div>
+                        <div class="security-progress-bar">
+                            <div class="security-progress-fill" style="width:${score}%;background:${color}"></div>
+                        </div>
+                    </div>
                 `;
                 securityFindings.innerHTML = security.findings.map(f => `
                     <div class="security-finding">
