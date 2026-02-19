@@ -1800,12 +1800,22 @@
             };
         }
 
-        async function collectExpandedSecuritySignals(baseUrl) {
+        async function collectExpandedSecuritySignals(baseUrl, homepageHtml = '') {
             try {
-                const [mainHeaders, authorHeaders, loginHeaders] = await Promise.allSettled([
+                const [mainHeaders, authorHeaders, loginHeaders, restUsersResult, loginPageResult, uploadsDirResult, includesDirResult, wpConfigProbe, ...backupSettled] = await Promise.allSettled([
                     fetchProxyHeaders(baseUrl.origin, 9000),
                     fetchProxyHeaders(baseUrl.origin + '/?author=1', 9000),
-                    fetchProxyHeaders(baseUrl.origin + '/wp-login.php', 9000)
+                    fetchProxyHeaders(baseUrl.origin + '/wp-login.php', 9000),
+                    fetchText(baseUrl.origin + '/wp-json/wp/v2/users?per_page=1&_fields=id,slug', 8000),
+                    fetchText(baseUrl.origin + '/wp-login.php', 8000),
+                    fetchText(baseUrl.origin + '/wp-content/uploads/', 7000),
+                    fetchText(baseUrl.origin + '/wp-includes/', 7000),
+                    fetchProxyHeaders(baseUrl.origin + '/wp-config.php', 7000),
+                    fetchProxyHeaders(baseUrl.origin + '/wp-config.php.bak', 7000),
+                    fetchProxyHeaders(baseUrl.origin + '/wp-config.php.save', 7000),
+                    fetchProxyHeaders(baseUrl.origin + '/backup.zip', 7000),
+                    fetchProxyHeaders(baseUrl.origin + '/db.sql', 7000),
+                    fetchProxyHeaders(baseUrl.origin + '/.env', 7000)
                 ]);
 
                 const main = mainHeaders.status === 'fulfilled' ? mainHeaders.value : null;
@@ -1816,10 +1826,92 @@
                 const userEnumerationExposed = author ? finalAuthorUrl.includes('/author/') : null;
                 const cookieFlags = analyzeCookieFlags(login && login.setCookie ? login.setCookie : []);
                 const headers = main && main.headers ? main.headers : {};
+                const lowerHeaders = Object.fromEntries(Object.entries(headers).map(([k, v]) => [String(k).toLowerCase(), String(v || '').toLowerCase()]));
 
-                return { headers, userEnumerationExposed, cookieFlags };
+                let restUserEnumerationExposed = null;
+                if (restUsersResult.status === 'fulfilled') {
+                    try {
+                        const data = JSON.parse(restUsersResult.value);
+                        restUserEnumerationExposed = Array.isArray(data) && data.length > 0;
+                    } catch {
+                        restUserEnumerationExposed = false;
+                    }
+                }
+
+                const loginHtml = loginPageResult.status === 'fulfilled' ? String(loginPageResult.value || '') : '';
+                const loginProtectionPattern = /(g-recaptcha|hcaptcha|cf-turnstile|limit login attempts|loginizer|wordfence|jetpack protect|really-simple-captcha|wp fail2ban|two-factor)/i;
+                const loginProtectionDetected = loginProtectionPattern.test(loginHtml) || !!lowerHeaders['cf-ray'] || String(lowerHeaders['server'] || '').includes('cloudflare');
+
+                const dirPattern = /index of|<title>[^<]*directory/i;
+                const uploadsDirListing = uploadsDirResult.status === 'fulfilled' && dirPattern.test(String(uploadsDirResult.value || ''));
+                const includesDirListing = includesDirResult.status === 'fulfilled' && dirPattern.test(String(includesDirResult.value || ''));
+
+                const wpConfig = wpConfigProbe.status === 'fulfilled' ? wpConfigProbe.value : null;
+                const wpConfigExposed = !!(wpConfig && wpConfig.status === 200 && String(wpConfig.finalUrl || '').toLowerCase().includes('/wp-config.php'));
+
+                const backupPaths = [
+                    '/wp-config.php.bak',
+                    '/wp-config.php.save',
+                    '/backup.zip',
+                    '/db.sql',
+                    '/.env'
+                ];
+                const backupExposure = [];
+                backupSettled.forEach((s, idx) => {
+                    const path = backupPaths[idx];
+                    if (s.status !== 'fulfilled') return;
+                    const p = s.value;
+                    if (p && p.status === 200 && String(p.finalUrl || '').toLowerCase().includes(path.toLowerCase())) {
+                        backupExposure.push(path);
+                    }
+                });
+
+                let phpVersion = null;
+                const poweredBy = String(headers['x-powered-by'] || '');
+                const server = String(headers['server'] || '');
+                const phpMatch = poweredBy.match(/php\/([\d.]+)/i) || server.match(/php\/([\d.]+)/i);
+                if (phpMatch) phpVersion = phpMatch[1];
+
+                const wafDetected = !!(
+                    lowerHeaders['cf-ray']
+                    || lowerHeaders['x-sucuri-id']
+                    || lowerHeaders['x-sucuri-cache']
+                    || lowerHeaders['x-mod-security']
+                    || lowerHeaders['x-firewall']
+                    || String(lowerHeaders['server'] || '').includes('cloudflare')
+                );
+
+                const mixedContentDetected = baseUrl.protocol === 'https:' && /(src|href)\s*=\s*["']http:\/\//i.test(String(homepageHtml || ''));
+
+                return {
+                    headers,
+                    userEnumerationExposed,
+                    restUserEnumerationExposed,
+                    cookieFlags,
+                    loginProtectionDetected,
+                    uploadsDirListing,
+                    includesDirListing,
+                    wpConfigExposed,
+                    backupExposure,
+                    phpVersion,
+                    wafDetected,
+                    mixedContentDetected
+                };
             } catch {
-                return { headers: {}, userEnumerationExposed: null, cookieFlags: { observed: false, allSecure: false, allHttpOnly: false, allSameSite: false, cookieCount: 0 } };
+                return {
+                    headers: {},
+                    userEnumerationExposed: null,
+                    restUserEnumerationExposed: null,
+                    cookieFlags: { observed: false, allSecure: false, allHttpOnly: false, allSameSite: false, cookieCount: 0 },
+                    loginProtectionDetected: null,
+                    uploadsDirListing: null,
+                    includesDirListing: null,
+                    wpConfigExposed: null,
+                    backupExposure: [],
+                    phpVersion: null,
+                    wafDetected: null,
+                    mixedContentDetected: null
+                };
             }
         }
 
@@ -2028,6 +2120,32 @@
             } catch {
                 return fallback;
             }
+        }
+
+        function parseSemverLoose(input) {
+            const m = String(input || '').match(/(\d+)(?:\.(\d+))?(?:\.(\d+))?/);
+            if (!m) return null;
+            return [parseInt(m[1] || '0', 10), parseInt(m[2] || '0', 10), parseInt(m[3] || '0', 10)];
+        }
+
+        function compareSemverLoose(a, b) {
+            const av = parseSemverLoose(a);
+            const bv = parseSemverLoose(b);
+            if (!av || !bv) return 0;
+            for (let i = 0; i < 3; i += 1) {
+                if (av[i] > bv[i]) return 1;
+                if (av[i] < bv[i]) return -1;
+            }
+            return 0;
+        }
+
+        function findPreviousScanForUrl(url) {
+            const history = getStoredJson('wp-detector-history', []);
+            const target = String(url || '').toLowerCase();
+            for (const item of history) {
+                if (String(item && item.url || '').toLowerCase() === target) return item;
+            }
+            return null;
         }
 
         async function fetchPageSpeed(url) {
@@ -2445,7 +2563,12 @@
         }
 
         // --- Security score calculation ---
-        function buildSecurityData({ ssl, version, versionExposed, xmlrpcOpen, loginExposed, readmeExposed, directoryListing, feedExposesVersion, securityHeaders, userEnumerationExposed, cookieFlags }) {
+        function buildSecurityData({
+            ssl, version, versionExposed, xmlrpcOpen, loginExposed, readmeExposed, directoryListing, feedExposesVersion,
+            securityHeaders, userEnumerationExposed, cookieFlags, restUserEnumerationExposed, loginProtectionDetected,
+            uploadsDirListing, includesDirListing, wpConfigExposed, backupExposure, phpVersion, wafDetected,
+            mixedContentDetected, previousSnapshot, theme, plugins
+        }) {
             const findings = [];
 
             // SSL checks (25 pts total)
@@ -2508,6 +2631,16 @@
                 findings.push({ category: 'wp', label: 'Directory Listing Disabled', detail: 'Server does not expose directory contents — internal file structure is hidden', level: 'good', points: 15, maxPoints: 15, suggestion: null });
             }
 
+            // Additional directory listing checks (10 pts)
+            if (uploadsDirListing === true || includesDirListing === true) {
+                const exposed = [];
+                if (uploadsDirListing) exposed.push('/wp-content/uploads/');
+                if (includesDirListing) exposed.push('/wp-includes/');
+                findings.push({ category: 'wp', label: 'Additional Directory Listing Exposed', detail: `Directory listing detected on ${exposed.join(' and ')}`, level: 'bad', points: 0, maxPoints: 10, suggestion: { text: 'Disable indexes globally in web server config and block public listing on WordPress directories.', code: 'Options -Indexes' } });
+            } else if (uploadsDirListing === false && includesDirListing === false) {
+                findings.push({ category: 'wp', label: 'Additional Directory Listing Hidden', detail: 'No directory listing detected on uploads/includes paths', level: 'good', points: 10, maxPoints: 10, suggestion: null });
+            }
+
             // Security response headers (18 pts)
             const headers = securityHeaders || {};
             if (headers['content-security-policy']) {
@@ -2535,6 +2668,21 @@
                 findings.push({ category: 'wp', label: 'Author Enumeration Not Detected', detail: 'No author archive redirect from ?author=1 was detected', level: 'good', points: 12, maxPoints: 12, suggestion: null });
             } else {
                 findings.push({ category: 'wp', label: 'Author Enumeration Check Inconclusive', detail: 'Could not reliably confirm author enumeration behavior', level: 'warn', points: 4, maxPoints: 12, suggestion: null });
+            }
+
+            if (restUserEnumerationExposed === true) {
+                findings.push({ category: 'wp', label: 'REST User Enumeration Exposed', detail: 'Public /wp-json/wp/v2/users endpoint appears to expose user identities', level: 'bad', points: 0, maxPoints: 12, suggestion: { text: 'Restrict REST user routes for unauthenticated visitors and disable author archive exposure.', code: "add_filter('rest_endpoints', function($endpoints) {\n  if (isset($endpoints['/wp/v2/users'])) unset($endpoints['/wp/v2/users']);\n  if (isset($endpoints['/wp/v2/users/(?P<id>[\\\\d]+)'])) unset($endpoints['/wp/v2/users/(?P<id>[\\\\d]+)']);\n  return $endpoints;\n});" } });
+            } else if (restUserEnumerationExposed === false) {
+                findings.push({ category: 'wp', label: 'REST User Enumeration Not Detected', detail: 'Public REST users endpoint did not expose user list', level: 'good', points: 12, maxPoints: 12, suggestion: null });
+            } else {
+                findings.push({ category: 'wp', label: 'REST User Enumeration Check Inconclusive', detail: 'Could not confirm whether REST users endpoint is restricted', level: 'warn', points: 4, maxPoints: 12, suggestion: null });
+            }
+
+            // Login abuse protection signal (8 pts)
+            if (loginProtectionDetected === true) {
+                findings.push({ category: 'wp', label: 'Login Protection Signals Detected', detail: 'CAPTCHA/rate-limit/WAF indicators were detected on login path', level: 'good', points: 8, maxPoints: 8, suggestion: null });
+            } else if (loginProtectionDetected === false) {
+                findings.push({ category: 'wp', label: 'No Login Protection Signal Detected', detail: 'No obvious CAPTCHA or brute-force controls detected on login path', level: 'warn', points: 0, maxPoints: 8, suggestion: { text: 'Enable brute-force protection (Cloudflare Turnstile, Limit Login Attempts, Wordfence, or fail2ban).', code: null } });
             }
 
             // Cookie security flags (12 pts)
@@ -2569,6 +2717,68 @@
                     maxPoints: 4,
                     suggestion: cookies.allSameSite ? null : { text: 'Set SameSite=Lax or Strict for auth/session cookies unless cross-site behavior is required.', code: 'session.cookie_samesite = "Lax"' }
                 });
+            }
+
+            // Sensitive file exposure (14 pts)
+            if (wpConfigExposed === true) {
+                findings.push({ category: 'wp', label: 'wp-config.php Exposure Risk', detail: 'wp-config.php appears directly reachable, which can expose credentials or indicate unsafe routing', level: 'bad', points: 0, maxPoints: 8, suggestion: { text: 'Block direct access to wp-config.php at web server level immediately.', code: '<Files wp-config.php>\n  Order Allow,Deny\n  Deny from all\n</Files>' } });
+            } else if (wpConfigExposed === false) {
+                findings.push({ category: 'wp', label: 'wp-config.php Not Exposed', detail: 'Direct access to wp-config.php was not detected', level: 'good', points: 8, maxPoints: 8, suggestion: null });
+            }
+
+            const leakedBackups = Array.isArray(backupExposure) ? backupExposure : [];
+            if (leakedBackups.length > 0) {
+                findings.push({ category: 'wp', label: 'Backup/Env File Exposure', detail: `Potentially sensitive files are publicly accessible: ${leakedBackups.join(', ')}`, level: 'bad', points: 0, maxPoints: 6, suggestion: { text: 'Remove exposed backup/env files from web root and deny direct access by extension.', code: '<FilesMatch "\\.(bak|old|sql|zip|env)$">\n  Require all denied\n</FilesMatch>' } });
+            } else {
+                findings.push({ category: 'wp', label: 'No Backup/Env Exposure Detected', detail: 'Common backup and env file paths were not publicly exposed', level: 'good', points: 6, maxPoints: 6, suggestion: null });
+            }
+
+            // Runtime/platform checks (12 pts)
+            if (phpVersion) {
+                if (compareSemverLoose(phpVersion, '8.0.0') < 0) {
+                    findings.push({ category: 'runtime', label: 'Outdated PHP Version', detail: `Detected PHP ${phpVersion}, which is high risk and likely unsupported`, level: 'bad', points: 0, maxPoints: 6, suggestion: { text: 'Upgrade PHP to a supported release (8.1+ recommended) via hosting control panel.', code: null } });
+                } else if (compareSemverLoose(phpVersion, '8.1.0') < 0) {
+                    findings.push({ category: 'runtime', label: 'Aging PHP Version', detail: `Detected PHP ${phpVersion}. Consider upgrading to current supported minor release`, level: 'warn', points: 3, maxPoints: 6, suggestion: { text: 'Upgrade PHP to latest supported branch in cPanel/hosting panel.', code: null } });
+                } else {
+                    findings.push({ category: 'runtime', label: 'Modern PHP Version Detected', detail: `Detected PHP ${phpVersion}`, level: 'good', points: 6, maxPoints: 6, suggestion: null });
+                }
+            }
+
+            if (version) {
+                if (compareSemverLoose(version, '6.0.0') < 0) {
+                    findings.push({ category: 'runtime', label: 'Old WordPress Core Version', detail: `Detected WordPress ${version}. Older major versions are frequently targeted`, level: 'warn', points: 2, maxPoints: 6, suggestion: { text: 'Update WordPress core to latest stable release after backup/testing.', code: 'wp core update' } });
+                } else {
+                    findings.push({ category: 'runtime', label: 'WordPress Core Version Looks Modern', detail: `Detected WordPress ${version}`, level: 'good', points: 6, maxPoints: 6, suggestion: null });
+                }
+            }
+
+            // WAF/bot defense posture (8 pts)
+            if (wafDetected === true) {
+                findings.push({ category: 'infra', label: 'WAF/Bot Protection Signal Detected', detail: 'Cloud/WAF protection indicators found in response headers', level: 'good', points: 8, maxPoints: 8, suggestion: null });
+            } else if (wafDetected === false) {
+                findings.push({ category: 'infra', label: 'No WAF Signal Detected', detail: 'No obvious WAF header signals detected', level: 'warn', points: 2, maxPoints: 8, suggestion: { text: 'Consider enabling managed WAF (Cloudflare, Sucuri, host WAF) and bot challenge rules.', code: null } });
+            }
+
+            // Mixed content on HTTPS (6 pts)
+            if (mixedContentDetected === true) {
+                findings.push({ category: 'ssl', label: 'Mixed Content Detected', detail: 'HTTPS page appears to load HTTP resources, weakening transport security', level: 'warn', points: 0, maxPoints: 6, suggestion: { text: 'Replace all http:// asset URLs with https:// and enforce scheme rewrite in WordPress/site config.', code: null } });
+            } else if (mixedContentDetected === false) {
+                findings.push({ category: 'ssl', label: 'No Mixed Content Signal', detail: 'No obvious HTTP resource links detected on HTTPS page', level: 'good', points: 6, maxPoints: 6, suggestion: null });
+            }
+
+            // Monitoring/drift signal from previous scan (6 pts)
+            if (previousSnapshot) {
+                const changes = [];
+                if (version && previousSnapshot.version && version !== previousSnapshot.version) changes.push(`Core ${previousSnapshot.version} -> ${version}`);
+                if ((theme || '') !== (previousSnapshot.theme || '') && (theme || previousSnapshot.theme)) changes.push(`Theme changed`);
+                const prevPlugins = Array.isArray(previousSnapshot.plugins) ? previousSnapshot.plugins.length : 0;
+                const curPlugins = Array.isArray(plugins) ? plugins.length : 0;
+                if (prevPlugins !== curPlugins) changes.push(`Plugins count ${prevPlugins} -> ${curPlugins}`);
+                if (changes.length > 0) {
+                    findings.push({ category: 'monitoring', label: 'Security Drift Detected', detail: `Site changed since last scan: ${changes.join(', ')}`, level: 'warn', points: 2, maxPoints: 6, suggestion: { text: 'Review recent changes and validate they were intentional. Re-run full security and vulnerability scans after deployments.', code: null } });
+                } else {
+                    findings.push({ category: 'monitoring', label: 'No Drift Since Last Scan', detail: 'No major core/theme/plugin drift detected versus last local snapshot', level: 'good', points: 6, maxPoints: 6, suggestion: null });
+                }
             }
 
             const totalMax = findings.reduce((s, f) => s + f.maxPoints, 0);
@@ -2857,8 +3067,9 @@
             // Await SSL + domain expiry results
             const ssl = await sslPromise;
             const domainExpiry = await domainExpiryPromise;
-            const expandedSecurity = await collectExpandedSecuritySignals(baseUrl);
+            const expandedSecurity = await collectExpandedSecuritySignals(baseUrl, html);
             const infra = detectTechStack(html, await infraPromise);
+            const previousSnapshot = findPreviousScanForUrl(baseUrl.origin);
 
             // Build security data (after ssl is resolved)
             const security = buildSecurityData({
@@ -2871,7 +3082,19 @@
                 feedExposesVersion: !!feedExposesVersion,
                 securityHeaders: expandedSecurity.headers,
                 userEnumerationExposed: expandedSecurity.userEnumerationExposed,
-                cookieFlags: expandedSecurity.cookieFlags
+                cookieFlags: expandedSecurity.cookieFlags,
+                restUserEnumerationExposed: expandedSecurity.restUserEnumerationExposed,
+                loginProtectionDetected: expandedSecurity.loginProtectionDetected,
+                uploadsDirListing: expandedSecurity.uploadsDirListing,
+                includesDirListing: expandedSecurity.includesDirListing,
+                wpConfigExposed: expandedSecurity.wpConfigExposed,
+                backupExposure: expandedSecurity.backupExposure,
+                phpVersion: expandedSecurity.phpVersion,
+                wafDetected: expandedSecurity.wafDetected,
+                mixedContentDetected: expandedSecurity.mixedContentDetected,
+                previousSnapshot,
+                theme,
+                plugins: [...plugins]
             });
 
             // Update security with final isWordPress
@@ -2992,8 +3215,9 @@
 
             const ssl = await sslPromise;
             const domainExpiry = await domainExpiryPromise;
-            const expandedSecurity = await collectExpandedSecuritySignals(baseUrl);
+            const expandedSecurity = await collectExpandedSecuritySignals(baseUrl, html);
             const infra = detectTechStack(html, await infraPromise);
+            const previousSnapshot = findPreviousScanForUrl(baseUrl.origin);
 
             const security = buildSecurityData({
                 ssl, version, versionExposed: !!version,
@@ -3004,7 +3228,19 @@
                 feedExposesVersion: !!feedExposesVersion,
                 securityHeaders: expandedSecurity.headers,
                 userEnumerationExposed: expandedSecurity.userEnumerationExposed,
-                cookieFlags: expandedSecurity.cookieFlags
+                cookieFlags: expandedSecurity.cookieFlags,
+                restUserEnumerationExposed: expandedSecurity.restUserEnumerationExposed,
+                loginProtectionDetected: expandedSecurity.loginProtectionDetected,
+                uploadsDirListing: expandedSecurity.uploadsDirListing,
+                includesDirListing: expandedSecurity.includesDirListing,
+                wpConfigExposed: expandedSecurity.wpConfigExposed,
+                backupExposure: expandedSecurity.backupExposure,
+                phpVersion: expandedSecurity.phpVersion,
+                wafDetected: expandedSecurity.wafDetected,
+                mixedContentDetected: expandedSecurity.mixedContentDetected,
+                previousSnapshot,
+                theme,
+                plugins: [...plugins]
             });
             security.isWordPress = isWordPress;
             if (!isWordPress) {
