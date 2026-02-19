@@ -1377,12 +1377,12 @@
     <div class="container">
         <div class="card">
             <div class="header">
-                <h1>WP Inspector</h1>
+                <h1 id="pageTitle">WP Inspector</h1>
                 <button class="theme-toggle" onclick="toggleTheme()" title="Toggle light/dark mode">
                     <span id="themeIcon">&#9788;</span>
                 </button>
             </div>
-            <p class="subtitle">Detect WordPress, inspect themes, plugins & SSL</p>
+            <p class="subtitle" id="pageSubtitle">Detect WordPress, inspect themes, plugins & SSL</p>
 
             <div class="tabs">
                 <button class="tab active" onclick="switchTab('single')">Single URL</button>
@@ -1704,11 +1704,37 @@
         }
 
         // --- Tab switching ---
+        function updatePageHeader(tab) {
+            const titleEl = document.getElementById('pageTitle');
+            const subtitleEl = document.getElementById('pageSubtitle');
+            if (!titleEl || !subtitleEl) return;
+
+            const section = (tab === 'email' || tab === 'monitoring') ? tab : 'inspector';
+            const content = {
+                inspector: {
+                    title: 'WP Inspector',
+                    subtitle: 'Detect WordPress, inspect themes, plugins, performance, and security posture.'
+                },
+                email: {
+                    title: 'Email Deliverability Check',
+                    subtitle: 'Audit MX, SPF, DKIM, and DMARC records with actionable email deliverability guidance.'
+                },
+                monitoring: {
+                    title: 'Monitoring',
+                    subtitle: 'Track scheduled scans, review drift alerts, and monitor security score changes over time.'
+                }
+            };
+            const selected = content[section] || content.inspector;
+            titleEl.textContent = selected.title;
+            subtitleEl.textContent = selected.subtitle;
+        }
+
         function switchTab(tab) {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.external-nav-btn').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
             document.querySelector(`.tab-content#tab-${tab}`).classList.add('active');
+            updatePageHeader(tab);
 
             const tabIndex = { single: 0, bulk: 1, history: 2 };
             const tabs = document.querySelectorAll('.tab');
