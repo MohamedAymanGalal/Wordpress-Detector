@@ -674,6 +674,21 @@
             color: #eab308;
         }
 
+        .bulk-badge.mail-good {
+            background: rgba(34, 197, 94, 0.16);
+            color: #22c55e;
+        }
+
+        .bulk-badge.mail-warn {
+            background: rgba(234, 179, 8, 0.18);
+            color: #eab308;
+        }
+
+        .bulk-badge.mail-bad {
+            background: rgba(239, 68, 68, 0.16);
+            color: #ef4444;
+        }
+
         .bulk-summary {
             display: flex;
             gap: 16px;
@@ -4046,13 +4061,16 @@
                 }
 
                 resultsEl.innerHTML = mailBulkResultsData.map(r => {
-                    const badgeClass = r.error ? 'error' : (r.score >= 70 ? 'wp' : 'not-wp');
-                    const badgeText = r.error ? 'Error' : `${r.score}/100`;
+                    let badgeClass = 'mail-bad';
+                    if (r.error) badgeClass = 'error';
+                    else if (r.score >= 80) badgeClass = 'mail-good';
+                    else if (r.score >= 50) badgeClass = 'mail-warn';
+                    const badgeText = r.error ? 'ERROR' : `Deliverability ${r.score}/100`;
                     const verdictText = r.error ? r.error : r.verdict;
                     return `<div class="bulk-result-item">
                         <span class="bulk-result-url" title="${escapeHtml(r.domain)}">${escapeHtml(r.domain)}</span>
                         <div class="bulk-result-info">
-                            <span class="bulk-result-version">${escapeHtml(verdictText)}</span>
+                            <span class="bulk-result-version">Email: ${escapeHtml(verdictText)}</span>
                             <span class="bulk-badge ${badgeClass}">${escapeHtml(badgeText)}</span>
                         </div>
                     </div>`;
@@ -4078,14 +4096,14 @@
         function copyMailBulkResults() {
             if (!mailBulkResultsData.length) return;
             const text = mailBulkResultsData.map(r =>
-                `${r.domain} - ${r.error ? 'Error: ' + r.error : `${r.verdict} (${r.score}/100)`}`
+                `${r.domain} - ${r.error ? 'Email Deliverability Error: ' + r.error : `Email Deliverability: ${r.verdict} (${r.score}/100)`}`
             ).join('\n');
             copyToClipboard(text);
         }
 
         function exportMailBulkCSV() {
             if (!mailBulkResultsData.length) return;
-            const rows = [['Domain', 'Score', 'Verdict', 'Error']];
+            const rows = [['Domain', 'Deliverability Score', 'Deliverability Verdict', 'Error']];
             for (const r of mailBulkResultsData) rows.push([r.domain, r.score != null ? r.score : '', r.verdict || '', r.error || '']);
             const csv = rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
             const blob = new Blob([csv], { type: 'text/csv' });
