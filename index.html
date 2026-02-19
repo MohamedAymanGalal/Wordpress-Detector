@@ -3446,7 +3446,10 @@
         function toggleAccordion(id) {
             const target = document.getElementById(id);
             if (!target || target.style.display === 'none') return;
-            if (target.classList.contains('open')) return;
+            if (target.classList.contains('open')) {
+                target.classList.remove('open');
+                return;
+            }
             openMainAccordion(id);
         }
 
