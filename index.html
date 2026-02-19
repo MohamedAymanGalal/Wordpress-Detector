@@ -60,6 +60,20 @@
             padding: 20px;
         }
 
+        .site-footer {
+            text-align: center;
+            margin-top: 14px;
+            font-size: 12px;
+            color: var(--text-dim);
+        }
+
+        .site-footer a {
+            color: var(--text-sub);
+            text-decoration: none;
+        }
+
+        .site-footer a:hover { text-decoration: underline; }
+
         .card {
             background: var(--card-bg);
             border-radius: 16px;
@@ -1335,6 +1349,10 @@
                 <div id="historyList"></div>
             </div>
         </div>
+        <div class="site-footer">
+            &copy; <span id="copyrightYear"></span> Elegant Web. All rights reserved.
+            <a href="https://elegantweb.co.uk" target="_blank" rel="noopener noreferrer">elegantweb.co.uk</a>
+        </div>
     </div>
 
     <div class="toast" id="toast"></div>
@@ -1348,6 +1366,8 @@
         ];
 
         // --- Theme toggle ---
+        document.getElementById('copyrightYear').textContent = String(new Date().getFullYear());
+
         function toggleTheme() {
             const html = document.documentElement;
             const current = html.getAttribute('data-theme');
