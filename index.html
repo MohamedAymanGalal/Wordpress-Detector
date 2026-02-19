@@ -229,6 +229,73 @@
 
         input[type="text"]:focus { border-color: var(--accent); }
 
+        select {
+            padding: 14px 14px;
+            border: 2px solid var(--border);
+            border-radius: 10px;
+            background: var(--input-bg);
+            color: var(--text-bright);
+            font-size: 14px;
+            outline: none;
+            min-width: 120px;
+        }
+
+        .monitor-item {
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 10px 12px;
+            margin-bottom: 10px;
+            background: var(--result-details-bg);
+        }
+
+        .monitor-head {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 8px;
+            flex-wrap: wrap;
+        }
+
+        .monitor-url {
+            color: var(--text-bright);
+            font-weight: 600;
+            word-break: break-all;
+            font-size: 14px;
+        }
+
+        .monitor-meta {
+            color: var(--text-muted);
+            font-size: 12px;
+            margin-bottom: 8px;
+        }
+
+        .monitor-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .monitor-empty {
+            color: var(--text-muted);
+            font-size: 13px;
+            padding: 6px 0;
+        }
+
+        .alert-item {
+            border-left: 3px solid #eab308;
+            padding: 8px 10px;
+            margin-bottom: 8px;
+            background: rgba(234, 179, 8, 0.08);
+            border-radius: 6px;
+            font-size: 13px;
+        }
+
+        .alert-item.bad {
+            border-left-color: #ef4444;
+            background: rgba(239, 68, 68, 0.09);
+        }
+
         textarea {
             width: 100%;
             padding: 14px 18px;
@@ -1269,6 +1336,7 @@
             <div class="tabs">
                 <button class="tab active" onclick="switchTab('single')">Single URL</button>
                 <button class="tab" onclick="switchTab('email')">Email Check</button>
+                <button class="tab" onclick="switchTab('monitoring')">Monitoring</button>
                 <button class="tab" onclick="switchTab('bulk')">Bulk Check</button>
                 <button class="tab" onclick="switchTab('history')">History</button>
             </div>
@@ -1448,6 +1516,35 @@
                 </div>
             </div>
 
+            <!-- Monitoring Tab -->
+            <div class="tab-content" id="tab-monitoring">
+                <div class="input-group">
+                    <input type="text" id="monitorUrlInput" placeholder="e.g. example.com" />
+                    <select id="monitorFrequency">
+                        <option value="daily">Daily</option>
+                        <option value="weekly">Weekly</option>
+                    </select>
+                    <button id="monitorAddBtn" onclick="addMonitorTarget()">Add Target</button>
+                </div>
+                <div class="bulk-actions">
+                    <button id="monitorRunDueBtn" onclick="runDueMonitors()">Run Due Scans</button>
+                    <button class="btn-secondary" onclick="clearMonitorAlerts()">Clear Alerts</button>
+                </div>
+                <div class="error-msg" id="monitorErrorMsg"></div>
+                <div class="loading" id="monitorLoading">
+                    <div class="spinner"></div>
+                    <div class="loading-text" id="monitorLoadingText">Running monitor scans...</div>
+                </div>
+                <div class="result-details">
+                    <div class="details-title">Saved Targets</div>
+                    <div id="monitorTargets"></div>
+                </div>
+                <div class="result-details" style="margin-top:14px">
+                    <div class="details-title">Recent Alerts</div>
+                    <div id="monitorAlerts"></div>
+                </div>
+            </div>
+
             <!-- Bulk Check Tab -->
             <div class="tab-content" id="tab-bulk">
                 <div class="sub-tabs">
@@ -1562,11 +1659,12 @@
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
             document.querySelector(`.tab-content#tab-${tab}`).classList.add('active');
-            const tabIndex = { single: 0, email: 1, bulk: 2, history: 3 };
+            const tabIndex = { single: 0, email: 1, monitoring: 2, bulk: 3, history: 4 };
             const tabs = document.querySelectorAll('.tab');
             const idx = tabIndex[tab];
             if (idx != null && tabs[idx]) tabs[idx].classList.add('active');
             if (tab === 'history') renderHistory();
+            if (tab === 'monitoring') renderMonitoring();
         }
 
         function switchSubTab(tab) {
@@ -3723,6 +3821,280 @@
             }
         }
 
+        const MONITOR_TARGETS_KEY = 'wp-monitor-targets';
+        const MONITOR_ALERTS_KEY = 'wp-monitor-alerts';
+
+        function getMonitorTargets() {
+            const list = getStoredJson(MONITOR_TARGETS_KEY, []);
+            return Array.isArray(list) ? list : [];
+        }
+
+        function saveMonitorTargets(list) {
+            localStorage.setItem(MONITOR_TARGETS_KEY, JSON.stringify(Array.isArray(list) ? list : []));
+        }
+
+        function getMonitorAlerts() {
+            const list = getStoredJson(MONITOR_ALERTS_KEY, []);
+            return Array.isArray(list) ? list : [];
+        }
+
+        function saveMonitorAlerts(list) {
+            localStorage.setItem(MONITOR_ALERTS_KEY, JSON.stringify(Array.isArray(list) ? list : []));
+        }
+
+        function monitorNextRunAt(freq, fromTs = Date.now()) {
+            const dayMs = 24 * 60 * 60 * 1000;
+            return fromTs + (freq === 'weekly' ? 7 * dayMs : dayMs);
+        }
+
+        function formatMonitorTime(ts) {
+            if (!ts) return 'Never';
+            const d = new Date(ts);
+            return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+
+        function summarizeMonitorSnapshot(result) {
+            return {
+                isWordPress: !!result.isWordPress,
+                confidence: result.confidence != null ? Number(result.confidence) : null,
+                securityScore: result.security && result.security.score != null ? Number(result.security.score) : null,
+                version: result.version || null,
+                theme: result.theme || null,
+                pluginCount: Array.isArray(result.plugins) ? result.plugins.length : 0
+            };
+        }
+
+        function deriveMonitorAlerts(url, previous, current, errorText) {
+            const alerts = [];
+            if (errorText) {
+                alerts.push({ level: 'bad', message: `Scan failed: ${errorText}` });
+                return alerts;
+            }
+            if (!previous || !current) return alerts;
+
+            if (previous.isWordPress !== current.isWordPress) {
+                alerts.push({ level: 'bad', message: `WordPress detection changed (${previous.isWordPress ? 'Detected' : 'Not detected'} -> ${current.isWordPress ? 'Detected' : 'Not detected'})` });
+            }
+            if (previous.securityScore != null && current.securityScore != null && (previous.securityScore - current.securityScore) >= 10) {
+                alerts.push({ level: 'bad', message: `Security score dropped by ${previous.securityScore - current.securityScore} points (${previous.securityScore} -> ${current.securityScore})` });
+            }
+            if (previous.confidence != null && current.confidence != null && (previous.confidence - current.confidence) >= 15) {
+                alerts.push({ level: 'warn', message: `Detection confidence dropped by ${previous.confidence - current.confidence}%` });
+            }
+            if (previous.version && current.version && previous.version !== current.version) {
+                alerts.push({ level: 'warn', message: `WordPress version changed (${previous.version} -> ${current.version})` });
+            }
+            if (previous.theme && current.theme && previous.theme !== current.theme) {
+                alerts.push({ level: 'warn', message: `Theme changed (${previous.theme} -> ${current.theme})` });
+            }
+            if ((current.pluginCount - previous.pluginCount) >= 3) {
+                alerts.push({ level: 'warn', message: `Plugin count increased significantly (${previous.pluginCount} -> ${current.pluginCount})` });
+            }
+            if (current.securityScore != null && current.securityScore < 40) {
+                alerts.push({ level: 'bad', message: `Security score is critically low (${current.securityScore}/100)` });
+            }
+            return alerts;
+        }
+
+        function addMonitorAlerts(url, alerts) {
+            if (!Array.isArray(alerts) || alerts.length === 0) return;
+            const existing = getMonitorAlerts();
+            const stamped = alerts.map(a => ({
+                url,
+                level: a.level || 'warn',
+                message: a.message || 'Alert',
+                ts: Date.now()
+            }));
+            const next = [...stamped, ...existing];
+            if (next.length > 150) next.length = 150;
+            saveMonitorAlerts(next);
+        }
+
+        function setMonitorLoading(active, text = '') {
+            const el = document.getElementById('monitorLoading');
+            if (!el) return;
+            if (active) {
+                if (text) document.getElementById('monitorLoadingText').textContent = text;
+                el.classList.add('active');
+            } else {
+                el.classList.remove('active');
+            }
+        }
+
+        async function runOneMonitorTarget(targetId) {
+            const targets = getMonitorTargets();
+            const idx = targets.findIndex(t => t.id === targetId);
+            if (idx === -1) return;
+            const target = targets[idx];
+            const previous = target.lastSnapshot || null;
+            let errorText = null;
+            let nextSnapshot = null;
+
+            try {
+                const result = await detectWordPress(target.url);
+                nextSnapshot = summarizeMonitorSnapshot(result);
+                target.lastSnapshot = nextSnapshot;
+                target.lastError = null;
+                saveToHistory(result);
+            } catch (e) {
+                errorText = String(e && e.message ? e.message : e || 'Unknown error');
+                target.lastError = errorText;
+            }
+
+            target.lastRunAt = Date.now();
+            target.nextRunAt = monitorNextRunAt(target.frequency, target.lastRunAt);
+            targets[idx] = target;
+            saveMonitorTargets(targets);
+
+            const generatedAlerts = deriveMonitorAlerts(target.url, previous, nextSnapshot, errorText);
+            addMonitorAlerts(target.url, generatedAlerts);
+            if (generatedAlerts.length > 0) showToast(`${generatedAlerts.length} monitor alert(s) on ${target.url}`);
+        }
+
+        async function runMonitorNow(id) {
+            document.getElementById('monitorErrorMsg').classList.remove('active');
+            setMonitorLoading(true, 'Running monitor scan...');
+            try {
+                await runOneMonitorTarget(id);
+                renderMonitoring();
+            } catch (e) {
+                showError('monitorErrorMsg', String(e && e.message ? e.message : e || 'Monitor scan failed.'));
+            } finally {
+                setMonitorLoading(false);
+            }
+        }
+
+        async function runDueMonitors() {
+            const targets = getMonitorTargets();
+            const due = targets.filter(t => !t.nextRunAt || t.nextRunAt <= Date.now());
+            if (due.length === 0) {
+                showToast('No due monitor scans right now');
+                return;
+            }
+
+            document.getElementById('monitorErrorMsg').classList.remove('active');
+            setMonitorLoading(true, `Running due scans (0/${due.length})...`);
+            try {
+                for (let i = 0; i < due.length; i += 1) {
+                    setMonitorLoading(true, `Running due scans (${i + 1}/${due.length})...`);
+                    await runOneMonitorTarget(due[i].id);
+                }
+                renderMonitoring();
+            } catch (e) {
+                showError('monitorErrorMsg', String(e && e.message ? e.message : e || 'Failed while running due scans.'));
+            } finally {
+                setMonitorLoading(false);
+            }
+        }
+
+        function removeMonitorTarget(id) {
+            const targets = getMonitorTargets().filter(t => t.id !== id);
+            saveMonitorTargets(targets);
+            renderMonitoring();
+        }
+
+        function addMonitorTarget() {
+            const raw = document.getElementById('monitorUrlInput').value.trim();
+            const freq = document.getElementById('monitorFrequency').value === 'weekly' ? 'weekly' : 'daily';
+            document.getElementById('monitorErrorMsg').classList.remove('active');
+
+            if (!raw) {
+                showError('monitorErrorMsg', 'Enter a URL to monitor.');
+                return;
+            }
+
+            let normalized;
+            try {
+                normalized = normalizeUrl(raw).origin;
+            } catch {
+                showError('monitorErrorMsg', 'Invalid URL.');
+                return;
+            }
+
+            const targets = getMonitorTargets();
+            const existingIdx = targets.findIndex(t => t.url === normalized);
+            if (existingIdx >= 0) {
+                targets[existingIdx].frequency = freq;
+                saveMonitorTargets(targets);
+                showToast('Monitor target updated');
+            } else {
+                targets.unshift({
+                    id: String(Date.now()) + '-' + Math.random().toString(36).slice(2, 8),
+                    url: normalized,
+                    frequency: freq,
+                    createdAt: Date.now(),
+                    lastRunAt: null,
+                    nextRunAt: Date.now(),
+                    lastSnapshot: null,
+                    lastError: null
+                });
+                saveMonitorTargets(targets);
+                showToast('Monitor target added');
+            }
+
+            document.getElementById('monitorUrlInput').value = '';
+            renderMonitoring();
+        }
+
+        function clearMonitorAlerts() {
+            saveMonitorAlerts([]);
+            renderMonitoring();
+            showToast('Monitor alerts cleared');
+        }
+
+        function renderMonitoring() {
+            const targetsEl = document.getElementById('monitorTargets');
+            const alertsEl = document.getElementById('monitorAlerts');
+            if (!targetsEl || !alertsEl) return;
+
+            const targets = getMonitorTargets();
+            targets.sort((a, b) => (a.nextRunAt || 0) - (b.nextRunAt || 0));
+
+            if (targets.length === 0) {
+                targetsEl.innerHTML = '<div class="monitor-empty">No targets yet. Add a URL and frequency to start monitoring.</div>';
+            } else {
+                targetsEl.innerHTML = targets.map(t => {
+                    const due = !t.nextRunAt || t.nextRunAt <= Date.now();
+                    const snapshot = t.lastSnapshot;
+                    const summaryBits = [];
+                    if (snapshot) {
+                        summaryBits.push(snapshot.isWordPress ? 'WP' : 'Not WP');
+                        if (snapshot.version) summaryBits.push('v' + snapshot.version);
+                        if (snapshot.securityScore != null) summaryBits.push('Security ' + snapshot.securityScore + '/100');
+                    }
+                    if (t.lastError) summaryBits.push('Last error');
+
+                    return `<div class="monitor-item">
+                        <div class="monitor-head">
+                            <div class="monitor-url">${escapeHtml(t.url)}</div>
+                            <span class="history-badge ${due ? 'not-wp' : 'wp'}">${due ? 'Due' : 'Scheduled'}</span>
+                        </div>
+                        <div class="monitor-meta">
+                            Frequency: ${escapeHtml(t.frequency)} | Last Run: ${escapeHtml(formatMonitorTime(t.lastRunAt))} | Next Run: ${escapeHtml(formatMonitorTime(t.nextRunAt))}
+                            ${summaryBits.length ? `<br>Snapshot: ${escapeHtml(summaryBits.join(' | '))}` : ''}
+                        </div>
+                        <div class="monitor-actions">
+                            <button class="btn-secondary" style="padding:8px 12px;font-size:12px" onclick="runMonitorNow('${escapeHtml(t.id)}')">Run Now</button>
+                            <button class="btn-secondary" style="padding:8px 12px;font-size:12px" onclick="removeMonitorTarget('${escapeHtml(t.id)}')">Remove</button>
+                        </div>
+                    </div>`;
+                }).join('');
+            }
+
+            const alerts = getMonitorAlerts();
+            if (alerts.length === 0) {
+                alertsEl.innerHTML = '<div class="monitor-empty">No alerts yet.</div>';
+            } else {
+                alertsEl.innerHTML = alerts.slice(0, 30).map(a => `
+                    <div class="alert-item ${a.level === 'bad' ? 'bad' : ''}">
+                        <div style="font-weight:600;color:var(--text-bright)">${escapeHtml(a.url || '')}</div>
+                        <div style="color:var(--text-sub);margin:3px 0">${escapeHtml(a.message || '')}</div>
+                        <div style="font-size:11px;color:var(--text-dim)">${escapeHtml(formatMonitorTime(a.ts))}</div>
+                    </div>
+                `).join('');
+            }
+        }
+
         function displayResults(isWordPress, confidence, checks, version, theme, pageBuilder, plugins, scanTime, ssl, security, domainExpiry, infra = null) {
             const results = document.getElementById('results');
             const verdict = document.getElementById('verdict');
@@ -4269,6 +4641,9 @@
         });
         document.getElementById('mailDomainInput').addEventListener('keydown', e => {
             if (e.key === 'Enter') runMailCheck();
+        });
+        document.getElementById('monitorUrlInput').addEventListener('keydown', e => {
+            if (e.key === 'Enter') addMonitorTarget();
         });
     </script>
 </body>
