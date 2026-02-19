@@ -1515,7 +1515,7 @@
             return new URL(url);
         }
 
-        let fetchTimeout = 30000;
+        let fetchTimeout = 12000;
 
         // Detects proxy error/default pages and corporate network block pages.
         function analyzeProxyResponse(text) {
@@ -1534,7 +1534,30 @@
             return msg.includes('network policy blocked proxy access');
         }
 
-        async function proxyFetch(url) {
+        function withTimeout(promise, ms, fallback = null) {
+            return new Promise((resolve) => {
+                let settled = false;
+                const timer = setTimeout(() => {
+                    if (!settled) {
+                        settled = true;
+                        resolve(fallback);
+                    }
+                }, ms);
+                promise.then((value) => {
+                    if (settled) return;
+                    settled = true;
+                    clearTimeout(timer);
+                    resolve(value);
+                }).catch(() => {
+                    if (settled) return;
+                    settled = true;
+                    clearTimeout(timer);
+                    resolve(fallback);
+                });
+            });
+        }
+
+        async function proxyFetch(url, timeoutMs = fetchTimeout) {
             // Race all proxies — first to return valid content wins
             const controllers = [];
             const promises = PROXIES.map((proxy, idx) => {
@@ -1557,7 +1580,7 @@
                 setTimeout(() => {
                     controllers.forEach(c => c.abort());
                     reject(new Error('Timeout'));
-                }, fetchTimeout);
+                }, timeoutMs);
             });
 
             return Promise.any([...promises, timeoutPromise].map(p =>
@@ -1580,8 +1603,8 @@
             });
         }
 
-        async function fetchText(url) {
-            return await proxyFetch(url);
+        async function fetchText(url, timeoutMs = fetchTimeout) {
+            return await proxyFetch(url, timeoutMs);
         }
 
         function delay(ms) {
@@ -1592,7 +1615,7 @@
         async function checkSSL(domain) {
             try {
                 const sslUrl = `https://ssl-checker.io/api/v1/check/${domain}`;
-                const text = await proxyFetch(sslUrl);
+                const text = await proxyFetch(sslUrl, 7000);
                 console.log('[WP Inspector] SSL response length:', text.length, '| Start:', text.substring(0, 100));
                 const data = JSON.parse(text);
                 const r = data.result || data;
@@ -1677,7 +1700,13 @@
                 for (const rdapUrl of urls) {
                     try {
                         // Try direct fetch (many RDAP servers support CORS)
-                        const resp = await fetch(rdapUrl, { headers: { 'Accept': 'application/rdap+json,application/json' } });
+                        const ctrl = new AbortController();
+                        const t = setTimeout(() => ctrl.abort(), 4000);
+                        const resp = await fetch(rdapUrl, {
+                            headers: { 'Accept': 'application/rdap+json,application/json' },
+                            signal: ctrl.signal
+                        });
+                        clearTimeout(t);
                         if (resp.ok) {
                             const text = await resp.text();
                             if (text.trim().startsWith('{')) {
@@ -1688,7 +1717,7 @@
                     } catch { /* try next */ }
                     try {
                         // Fallback to proxy
-                        const text = await proxyFetch(rdapUrl);
+                        const text = await proxyFetch(rdapUrl, 5000);
                         if (text.trim().startsWith('{')) {
                             data = JSON.parse(text);
                             break;
@@ -2179,10 +2208,10 @@
 
             // Start SSL + domain expiry checks in parallel with main fetch
             const domain = baseUrl.hostname;
-            const sslPromise = checkSSL(domain);
-            const domainExpiryPromise = checkDomainExpiry(domain);
+            const sslPromise = withTimeout(checkSSL(domain), 8000, null);
+            const domainExpiryPromise = withTimeout(checkDomainExpiry(domain), 8000, null);
 
-            const html = await fetchText(baseUrl.origin);
+            const html = await fetchText(baseUrl.origin, 10000);
 
             // 1. Meta generator tag
             const generatorMatch = html.match(/<meta[^>]+name=["']generator["'][^>]+content=["']([^"']*wordpress[^"']*)["']/i)
@@ -2215,25 +2244,25 @@
 
             // Run all endpoint checks in parallel (including security-relevant ones)
             const [loginResult, apiResult, xmlrpcResult, feedResult, readmeResult, dirListResult] = await Promise.allSettled([
-                proxyFetch(baseUrl.origin + '/wp-login.php')
+                proxyFetch(baseUrl.origin + '/wp-login.php', 8000)
                     .then(t => /user_login/i.test(t) && /wp-submit/i.test(t)),
 
-                fetchText(baseUrl.origin + '/wp-json/')
+                fetchText(baseUrl.origin + '/wp-json/', 8000)
                     .then(t => { return t; }),
 
-                proxyFetch(baseUrl.origin + '/xmlrpc.php')
+                proxyFetch(baseUrl.origin + '/xmlrpc.php', 8000)
                     .then(t => /xml-rpc server accepts post requests only/i.test(t)),
 
-                fetchText(baseUrl.origin + '/feed/')
+                fetchText(baseUrl.origin + '/feed/', 7000)
                     .then(t => { const m = t.match(/generator>https?:\/\/wordpress\.org\/\?v=([\d.]+)</i); return m ? m[1] : null; }),
 
-                fetchText(baseUrl.origin + '/readme.html')
+                fetchText(baseUrl.origin + '/readme.html', 7000)
                     .then(t => {
                         const m = t.match(/wordpress[^<]*?version\s*([\d.]+)/i) || t.match(/<br\s*\/?\s*>\s*version\s*([\d.]+)/i);
                         return m ? m[1] : null;
                     }),
 
-                fetchText(baseUrl.origin + '/wp-content/')
+                fetchText(baseUrl.origin + '/wp-content/', 7000)
                     .then(t => /index of/i.test(t) || /<title>[^<]*directory/i.test(t))
             ]);
 
@@ -2319,10 +2348,10 @@
             let plugins = new Set();
 
             const domain = baseUrl.hostname;
-            const sslPromise = checkSSL(domain);
-            const domainExpiryPromise = checkDomainExpiry(domain);
+            const sslPromise = withTimeout(checkSSL(domain), 8000, null);
+            const domainExpiryPromise = withTimeout(checkDomainExpiry(domain), 8000, null);
 
-            const html = await fetchText(baseUrl.origin);
+            const html = await fetchText(baseUrl.origin, 10000);
             console.log('[WP Inspector] Fetched HTML length:', html.length, '| First 200 chars:', html.substring(0, 200));
 
             // HTML-based checks — resolve immediately
@@ -2354,15 +2383,15 @@
 
             // Endpoint checks — resolve as they complete
             const endpointChecks = [
-                { name: 'wp-login.php', promise: proxyFetch(baseUrl.origin + '/wp-login.php').then(t => /user_login/i.test(t) && /wp-submit/i.test(t)) },
-                { name: 'REST API (/wp-json/)', promise: fetchText(baseUrl.origin + '/wp-json/') },
-                { name: 'XML-RPC', promise: proxyFetch(baseUrl.origin + '/xmlrpc.php').then(t => /xml-rpc server accepts post requests only/i.test(t)) }
+                { name: 'wp-login.php', promise: proxyFetch(baseUrl.origin + '/wp-login.php', 8000).then(t => /user_login/i.test(t) && /wp-submit/i.test(t)) },
+                { name: 'REST API (/wp-json/)', promise: fetchText(baseUrl.origin + '/wp-json/', 8000) },
+                { name: 'XML-RPC', promise: proxyFetch(baseUrl.origin + '/xmlrpc.php', 8000).then(t => /xml-rpc server accepts post requests only/i.test(t)) }
             ];
 
             // Feed & readme for version, directory listing for security
-            const feedPromise = fetchText(baseUrl.origin + '/feed/').then(t => { const m = t.match(/generator>https?:\/\/wordpress\.org\/\?v=([\d.]+)</i); return m ? m[1] : null; }).catch(() => null);
-            const readmePromise = fetchText(baseUrl.origin + '/readme.html').then(t => { const m = t.match(/wordpress[^<]*?version\s*([\d.]+)/i) || t.match(/<br\s*\/?\s*>\s*version\s*([\d.]+)/i); return m ? m[1] : null; }).catch(() => null);
-            const dirListPromise = fetchText(baseUrl.origin + '/wp-content/').then(t => /index of/i.test(t) || /<title>[^<]*directory/i.test(t)).catch(() => false);
+            const feedPromise = fetchText(baseUrl.origin + '/feed/', 7000).then(t => { const m = t.match(/generator>https?:\/\/wordpress\.org\/\?v=([\d.]+)</i); return m ? m[1] : null; }).catch(() => null);
+            const readmePromise = fetchText(baseUrl.origin + '/readme.html', 7000).then(t => { const m = t.match(/wordpress[^<]*?version\s*([\d.]+)/i) || t.match(/<br\s*\/?\s*>\s*version\s*([\d.]+)/i); return m ? m[1] : null; }).catch(() => null);
+            const dirListPromise = fetchText(baseUrl.origin + '/wp-content/', 7000).then(t => /index of/i.test(t) || /<title>[^<]*directory/i.test(t)).catch(() => false);
 
             // Fire endpoint checks
             await Promise.allSettled(endpointChecks.map(async (ec) => {
