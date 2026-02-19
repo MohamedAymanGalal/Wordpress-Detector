@@ -57,6 +57,54 @@ function fetch_remote(string $url, array $headers = [], int $connectTimeout = 8,
     ];
 }
 
+function fetch_headers_only(string $url, int $connectTimeout = 6, int $timeout = 10): array
+{
+    $collected = [];
+    $ch = curl_init($url);
+    if ($ch === false) {
+        throw new RuntimeException('Failed to initialize request');
+    }
+
+    curl_setopt_array($ch, [
+        CURLOPT_NOBODY => true,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_MAXREDIRS => 5,
+        CURLOPT_CONNECTTIMEOUT => $connectTimeout,
+        CURLOPT_TIMEOUT => $timeout,
+        CURLOPT_USERAGENT => 'WP Inspector Proxy/1.0',
+        CURLOPT_HEADERFUNCTION => static function ($ch, $line) use (&$collected) {
+            $trim = trim($line);
+            if ($trim === '' || strpos($trim, ':') === false) {
+                return strlen($line);
+            }
+            [$name, $value] = explode(':', $trim, 2);
+            $key = strtolower(trim($name));
+            $val = trim($value);
+            if (!isset($collected[$key])) {
+                $collected[$key] = $val;
+            } else {
+                $collected[$key] .= ', ' . $val;
+            }
+            return strlen($line);
+        },
+        CURLOPT_RETURNTRANSFER => true,
+    ]);
+
+    $ok = curl_exec($ch);
+    if ($ok === false) {
+        $err = curl_error($ch);
+        curl_close($ch);
+        throw new RuntimeException('Header fetch failed: ' . $err);
+    }
+    $statusCode = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+    curl_close($ch);
+
+    return [
+        'status' => $statusCode > 0 ? $statusCode : 200,
+        'headers' => $collected,
+    ];
+}
+
 function block_private_destinations(string $host): void
 {
     $host = strtolower($host);
@@ -173,6 +221,33 @@ if (isset($_GET['action']) && $_GET['action'] === 'pagespeed') {
     http_response_code($result['status']);
     header('Content-Type: application/json; charset=utf-8');
     echo $result['body'];
+    exit;
+}
+
+if (isset($_GET['action']) && $_GET['action'] === 'headers') {
+    $targetUrl = isset($_GET['url']) ? trim((string) $_GET['url']) : '';
+    if ($targetUrl === '') {
+        fail(400, 'Missing url parameter');
+    }
+    $parts = @parse_url($targetUrl);
+    if (!$parts || !isset($parts['scheme'], $parts['host'])) {
+        fail(400, 'Invalid URL');
+    }
+    $scheme = strtolower((string) $parts['scheme']);
+    if ($scheme !== 'http' && $scheme !== 'https') {
+        fail(400, 'Only http/https URLs are allowed');
+    }
+    block_private_destinations((string) $parts['host']);
+
+    try {
+        $result = fetch_headers_only($targetUrl, 6, 10);
+    } catch (Throwable $e) {
+        fail(502, $e->getMessage());
+    }
+
+    http_response_code($result['status']);
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode(['headers' => $result['headers']], JSON_UNESCAPED_SLASHES);
     exit;
 }
 

@@ -1341,6 +1341,19 @@
                                     </div>
                                 </div>
 
+                                <div class="accordion" id="accordionInfra" style="display:none">
+                                    <div class="accordion-header" onclick="toggleAccordion('accordionInfra')">
+                                        <div class="accordion-header-left">
+                                            <span>Infrastructure</span>
+                                            <span class="accordion-badge blue" id="infraBadge"></span>
+                                        </div>
+                                        <span class="accordion-arrow">&#9660;</span>
+                                    </div>
+                                    <div class="accordion-body">
+                                        <div id="infraRows"></div>
+                                    </div>
+                                </div>
+
                                 <div class="accordion" id="accordionPagespeed" style="display:none">
                                     <div class="accordion-header" onclick="toggleAccordion('accordionPagespeed')">
                                         <div class="accordion-header-left">
@@ -1872,6 +1885,57 @@
             } catch {
                 return null;
             }
+        }
+
+        async function fetchInfraHeaders(url) {
+            try {
+                const resp = await fetch(`proxy.php?action=headers&url=${encodeURIComponent(url)}`);
+                if (!resp.ok) return {};
+                const data = await resp.json();
+                return data && data.headers ? data.headers : {};
+            } catch {
+                return {};
+            }
+        }
+
+        function detectTechStack(html, headers) {
+            const getHeader = (name) => String(headers[name] || '').toLowerCase();
+            const headerHas = (name, value) => getHeader(name).includes(value);
+            const text = String(html || '').toLowerCase();
+
+            const cdn = [];
+            const waf = [];
+            let server = null;
+
+            if (headerHas('server', 'cloudflare') || getHeader('cf-ray') || text.includes('/cdn-cgi/')) {
+                cdn.push('Cloudflare');
+                waf.push('Cloudflare');
+            }
+            if (getHeader('x-sucuri-id') || getHeader('x-sucuri-cache')) waf.push('Sucuri');
+            if (getHeader('x-amz-cf-id') || getHeader('x-cache').includes('cloudfront')) cdn.push('CloudFront');
+            if (getHeader('x-served-by').includes('fastly') || getHeader('x-cache').includes('fastly')) cdn.push('Fastly');
+            if (getHeader('x-cache').includes('bunnycdn')) cdn.push('BunnyCDN');
+            if (getHeader('x-cdn') || getHeader('cdn-cache')) cdn.push(getHeader('x-cdn') || getHeader('cdn-cache'));
+
+            if (headerHas('server', 'litespeed') || getHeader('x-litespeed-cache')) server = 'LiteSpeed';
+            else if (headerHas('server', 'nginx')) server = 'Nginx';
+            else if (headerHas('server', 'apache')) server = 'Apache';
+            else if (getHeader('server')) server = headers['server'];
+
+            const hostingHints = [];
+            if (headerHas('x-powered-by', 'plesk')) hostingHints.push('Plesk');
+            if (headerHas('x-powered-by', 'cpanel')) hostingHints.push('cPanel');
+            if (getHeader('x-endurance-cache-level')) hostingHints.push('Bluehost/Endurance');
+            if (headerHas('x-hosting', 'siteground')) hostingHints.push('SiteGround');
+            if (headerHas('server', 'wp engine')) hostingHints.push('WP Engine');
+
+            const uniq = (arr) => [...new Set(arr.filter(Boolean).map(v => String(v).trim()))];
+            return {
+                server: server || null,
+                cdn: uniq(cdn),
+                waf: uniq(waf),
+                hostingHints: uniq(hostingHints)
+            };
         }
 
         // --- PageSpeed Insights ---
@@ -2570,6 +2634,7 @@
             const domainExpiryPromise = withTimeout(checkDomainExpiry(domain), 8000, null);
 
             const html = await fetchText(baseUrl.origin, 10000);
+            const infraPromise = withTimeout(fetchInfraHeaders(baseUrl.origin), 5000, {});
 
             // 1. Meta generator tag
             const generatorMatch = html.match(/<meta[^>]+name=["']generator["'][^>]+content=["']([^"']*wordpress[^"']*)["']/i)
@@ -2663,6 +2728,7 @@
             // Await SSL + domain expiry results
             const ssl = await sslPromise;
             const domainExpiry = await domainExpiryPromise;
+            const infra = detectTechStack(html, await infraPromise);
 
             // Build security data (after ssl is resolved)
             const security = buildSecurityData({
@@ -2693,7 +2759,8 @@
                 plugins: [...plugins],
                 ssl,
                 domainExpiry,
-                security
+                security,
+                infra
             };
         }
 
@@ -2710,6 +2777,7 @@
             const domainExpiryPromise = withTimeout(checkDomainExpiry(domain), 8000, null);
 
             const html = await fetchText(baseUrl.origin, 10000);
+            const infraPromise = withTimeout(fetchInfraHeaders(baseUrl.origin), 5000, {});
             console.log('[WP Inspector] Fetched HTML length:', html.length, '| First 200 chars:', html.substring(0, 200));
 
             // HTML-based checks — resolve immediately
@@ -2791,6 +2859,7 @@
 
             const ssl = await sslPromise;
             const domainExpiry = await domainExpiryPromise;
+            const infra = detectTechStack(html, await infraPromise);
 
             const security = buildSecurityData({
                 ssl, version, versionExposed: !!version,
@@ -2806,7 +2875,7 @@
                 security.score = security.findings.length > 0 ? Math.round(security.findings.reduce((s, f) => s + f.points, 0) / security.findings.reduce((s, f) => s + f.maxPoints, 0) * 100) : null;
             }
 
-            return { url: baseUrl.origin, isWordPress, confidence, checks, version, theme, pageBuilder, plugins: [...plugins], ssl, security, domainExpiry };
+            return { url: baseUrl.origin, isWordPress, confidence, checks, version, theme, pageBuilder, plugins: [...plugins], ssl, security, domainExpiry, infra };
         }
 
         // --- Share results ---
@@ -2883,6 +2952,7 @@
                 ssl: result.ssl || null,
                 security: result.security || null,
                 domainExpiry: result.domainExpiry || null,
+                infra: result.infra || null,
                 timestamp: Date.now()
             });
             // Keep last 50 entries
@@ -2927,7 +2997,7 @@
             // Show saved results directly without re-scanning
             if (item.checks && Object.keys(item.checks).length > 0) {
                 lastScanResult = item;
-                displayResults(item.isWordPress, item.confidence, item.checks, item.version, item.theme, item.pageBuilder || null, item.plugins || [], null, item.ssl || null, item.security || null, item.domainExpiry || null);
+                displayResults(item.isWordPress, item.confidence, item.checks, item.version, item.theme, item.pageBuilder || null, item.plugins || [], null, item.ssl || null, item.security || null, item.domainExpiry || null, item.infra || null);
                 if (item.isWordPress) {
                     fetchPageSpeed(item.url).then(psi => renderPageSpeed(psi)).catch(() => renderPageSpeed(null));
                     runVulnerabilityLookup(item).catch(() => {});
@@ -2988,6 +3058,7 @@
             // Reset accordions
             document.getElementById('accordionOverview').style.display = 'none';
             document.getElementById('accordionSsl').style.display = 'none';
+            document.getElementById('accordionInfra').style.display = 'none';
             document.getElementById('accordionPagespeed').style.display = 'none';
             document.getElementById('accordionSecurity').style.display = 'none';
             document.getElementById('accordionVulns').style.display = 'none';
@@ -3045,7 +3116,7 @@
                 result.scanTime = elapsed;
                 saveToHistory(result);
                 lastScanResult = result;
-                displayResults(result.isWordPress, result.confidence, result.checks, result.version, result.theme, result.pageBuilder, result.plugins, elapsed, result.ssl, result.security, result.domainExpiry);
+                displayResults(result.isWordPress, result.confidence, result.checks, result.version, result.theme, result.pageBuilder, result.plugins, elapsed, result.ssl, result.security, result.domainExpiry, result.infra || null);
 
                 // Fetch PageSpeed in background for WordPress sites
                 if (result.isWordPress) {
@@ -3087,7 +3158,7 @@
             el.classList.add('active');
         }
 
-        function displayResults(isWordPress, confidence, checks, version, theme, pageBuilder, plugins, scanTime, ssl, security, domainExpiry) {
+        function displayResults(isWordPress, confidence, checks, version, theme, pageBuilder, plugins, scanTime, ssl, security, domainExpiry, infra = null) {
             const results = document.getElementById('results');
             const verdict = document.getElementById('verdict');
             const verdictText = document.getElementById('verdictText');
@@ -3171,6 +3242,25 @@
                 `;
             } else {
                 accordionSsl.style.display = 'none';
+            }
+
+            // --- Infrastructure accordion ---
+            const accordionInfra = document.getElementById('accordionInfra');
+            const infraBadge = document.getElementById('infraBadge');
+            const infraRows = document.getElementById('infraRows');
+            infraRows.innerHTML = '';
+            if (isWordPress && infra && (infra.server || (infra.cdn && infra.cdn.length) || (infra.waf && infra.waf.length) || (infra.hostingHints && infra.hostingHints.length))) {
+                accordionInfra.style.display = 'block';
+                accordionInfra.classList.add('open');
+                const primary = infra.server || (infra.cdn && infra.cdn[0]) || (infra.waf && infra.waf[0]) || 'Detected';
+                infraBadge.textContent = escapeHtml(primary);
+                infraBadge.className = 'accordion-badge blue';
+                if (infra.server) infraRows.innerHTML += `<div class="detail-row"><span class="label">Web Server</span><span class="value">${escapeHtml(infra.server)}</span></div>`;
+                if (infra.cdn && infra.cdn.length) infraRows.innerHTML += `<div class="detail-row"><span class="label">CDN</span><span class="value">${escapeHtml(infra.cdn.join(', '))}</span></div>`;
+                if (infra.waf && infra.waf.length) infraRows.innerHTML += `<div class="detail-row"><span class="label">WAF</span><span class="value">${escapeHtml(infra.waf.join(', '))}</span></div>`;
+                if (infra.hostingHints && infra.hostingHints.length) infraRows.innerHTML += `<div class="detail-row"><span class="label">Hosting Hint</span><span class="value">${escapeHtml(infra.hostingHints.join(', '))}</span></div>`;
+            } else {
+                accordionInfra.style.display = 'none';
             }
 
             // --- PageSpeed accordion (WordPress only, shows loading) ---
