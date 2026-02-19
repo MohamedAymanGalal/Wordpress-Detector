@@ -1384,7 +1384,7 @@
             </div>
             <p class="subtitle" id="pageSubtitle">Detect WordPress, inspect themes, plugins & SSL</p>
 
-            <div class="tabs">
+            <div class="tabs" id="inspectorTabs">
                 <button class="tab active" onclick="switchTab('single')">Single URL</button>
                 <button class="tab" onclick="switchTab('bulk')">Bulk Check</button>
                 <button class="tab" onclick="switchTab('history')">History</button>
@@ -1758,6 +1758,11 @@
             const tabs = document.querySelectorAll('.tab');
             const idx = tabIndex[tab];
             if (idx != null && tabs[idx]) tabs[idx].classList.add('active');
+
+            const inspectorTabs = document.getElementById('inspectorTabs');
+            if (inspectorTabs) {
+                inspectorTabs.style.display = (tab === 'single' || tab === 'bulk' || tab === 'history') ? 'flex' : 'none';
+            }
 
             if (tab === 'single' || tab === 'bulk' || tab === 'history') {
                 const inspectorBtn = document.getElementById('navInspectorBtn');
