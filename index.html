@@ -1645,26 +1645,28 @@
                 <div class="input-group">
                     <input type="text" id="monitorUrlInput" placeholder="e.g. example.com" />
                     <select id="monitorFrequency">
-                        <option value="daily">Daily</option>
-                        <option value="weekly">Weekly</option>
+                        <option value="1m">Every 1 min</option>
+                        <option value="5m" selected>Every 5 min</option>
+                        <option value="15m">Every 15 min</option>
+                        <option value="60m">Every 60 min</option>
                     </select>
                     <button id="monitorAddBtn" onclick="addMonitorTarget()">Add Target</button>
                 </div>
                 <div class="bulk-actions">
-                    <button id="monitorRunDueBtn" onclick="runDueMonitors()">Run Due Scans</button>
+                    <button id="monitorRunDueBtn" onclick="runDueMonitors()">Run Due Uptime Checks</button>
                     <button class="btn-secondary" onclick="clearMonitorAlerts()">Clear Alerts</button>
                 </div>
                 <div class="error-msg" id="monitorErrorMsg"></div>
                 <div class="loading" id="monitorLoading">
                     <div class="spinner"></div>
-                    <div class="loading-text" id="monitorLoadingText">Running monitor scans...</div>
+                    <div class="loading-text" id="monitorLoadingText">Running uptime checks...</div>
                 </div>
                 <div class="result-details">
-                    <div class="details-title">Saved Targets</div>
+                    <div class="details-title">Uptime Targets</div>
                     <div id="monitorTargets"></div>
                 </div>
                 <div class="result-details" style="margin-top:14px">
-                    <div class="details-title">Recent Alerts</div>
+                    <div class="details-title">Incidents & Alerts</div>
                     <div id="monitorAlerts"></div>
                 </div>
             </div>
@@ -1796,7 +1798,7 @@
                 },
                 monitoring: {
                     title: 'Monitoring',
-                    subtitle: 'Track scheduled scans, review drift alerts, and monitor security score changes over time.'
+                    subtitle: 'Track uptime, response times, outages, and recoveries across your monitored targets.'
                 }
             };
             const selected = content[section] || content.inspector;
@@ -4043,9 +4045,23 @@
                     const settled = await Promise.allSettled(batch.map(async (d) => {
                         try {
                             const out = await performMailCheckDomain(d);
-                            return { domain: out.domain, score: out.summary.score, verdict: out.summary.verdict, error: null };
+                            return {
+                                domain: out.domain,
+                                score: out.summary.score,
+                                verdict: out.summary.verdict,
+                                error: null,
+                                checks: out.summary.checks || [],
+                                recs: out.summary.recs || []
+                            };
                         } catch (e) {
-                            return { domain: d, score: null, verdict: 'Error', error: String(e && e.message ? e.message : e || 'Failed') };
+                            return {
+                                domain: d,
+                                score: null,
+                                verdict: 'Error',
+                                error: String(e && e.message ? e.message : e || 'Failed'),
+                                checks: [],
+                                recs: []
+                            };
                         }
                     }));
                     for (const s of settled) {
@@ -4067,13 +4083,31 @@
                     else if (r.score >= 50) badgeClass = 'mail-warn';
                     const badgeText = r.error ? 'ERROR' : `Deliverability ${r.score}/100`;
                     const verdictText = r.error ? r.error : r.verdict;
+                    const detailId = `mailBulkDetail-${Math.random().toString(36).slice(2, 10)}`;
+                    const checksHtml = (r.checks || []).slice(0, 8).map(c =>
+                        `<div class="bulk-detail-row"><span>${escapeHtml(c.label || 'Check')}</span><span class="val">${escapeHtml(c.ok ? 'PASS' : (c.warn ? 'WARN' : 'FAIL'))}</span></div>`
+                    ).join('');
+                    const recsHtml = (r.recs || []).slice(0, 5).map(t =>
+                        `<div class="bulk-detail-row"><span>Action</span><span class="val">${escapeHtml(t)}</span></div>`
+                    ).join('');
+                    const detailsHtml = r.error
+                        ? `<div class="bulk-result-details" id="${detailId}">
+                            <div class="bulk-detail-row"><span>Error</span><span class="val">${escapeHtml(r.error)}</span></div>
+                        </div>`
+                        : `<div class="bulk-result-details" id="${detailId}">
+                            <div class="bulk-detail-row"><span>Deliverability Score</span><span class="val">${escapeHtml(r.score)}/100</span></div>
+                            <div class="bulk-detail-row"><span>Verdict</span><span class="val">${escapeHtml(r.verdict)}</span></div>
+                            ${checksHtml || '<div class="bulk-detail-row"><span>Checks</span><span class="val">No check details</span></div>'}
+                            ${recsHtml || '<div class="bulk-detail-row"><span>Recommendations</span><span class="val">No major recommendations</span></div>'}
+                        </div>`;
                     return `<div class="bulk-result-item">
                         <span class="bulk-result-url" title="${escapeHtml(r.domain)}">${escapeHtml(r.domain)}</span>
                         <div class="bulk-result-info">
                             <span class="bulk-result-version">Email: ${escapeHtml(verdictText)}</span>
                             <span class="bulk-badge ${badgeClass}">${escapeHtml(badgeText)}</span>
+                            <button class="bulk-detail-toggle" onclick="toggleDetail('${detailId}')">Details</button>
                         </div>
-                    </div>`;
+                    </div>${detailsHtml}`;
                 }).join('');
 
                 actionsRow.style.display = 'flex';
@@ -4135,9 +4169,13 @@
             localStorage.setItem(MONITOR_ALERTS_KEY, JSON.stringify(Array.isArray(list) ? list : []));
         }
 
+        function monitorIntervalMs(freq) {
+            const map = { '1m': 60_000, '5m': 300_000, '15m': 900_000, '60m': 3_600_000 };
+            return map[freq] || map['5m'];
+        }
+
         function monitorNextRunAt(freq, fromTs = Date.now()) {
-            const dayMs = 24 * 60 * 60 * 1000;
-            return fromTs + (freq === 'weekly' ? 7 * dayMs : dayMs);
+            return fromTs + monitorIntervalMs(freq);
         }
 
         function formatMonitorTime(ts) {
@@ -4146,45 +4184,48 @@
             return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         }
 
-        function summarizeMonitorSnapshot(result) {
+        function computeUptimeRate(history) {
+            const h = Array.isArray(history) ? history : [];
+            if (h.length === 0) return null;
+            const upCount = h.filter(x => x && x.isUp).length;
+            return Math.round((upCount / h.length) * 1000) / 10;
+        }
+
+        function summarizeUptimeSnapshot(check) {
+            if (!check) return null;
             return {
-                isWordPress: !!result.isWordPress,
-                confidence: result.confidence != null ? Number(result.confidence) : null,
-                securityScore: result.security && result.security.score != null ? Number(result.security.score) : null,
-                version: result.version || null,
-                theme: result.theme || null,
-                pluginCount: Array.isArray(result.plugins) ? result.plugins.length : 0
+                isUp: !!check.isUp,
+                statusCode: check.statusCode != null ? Number(check.statusCode) : null,
+                responseMs: check.responseMs != null ? Number(check.responseMs) : null,
+                checkedAt: check.ts || Date.now()
             };
         }
 
-        function deriveMonitorAlerts(url, previous, current, errorText) {
-            const alerts = [];
-            if (errorText) {
-                alerts.push({ level: 'bad', message: `Scan failed: ${errorText}` });
-                return alerts;
+        async function performUptimeCheck(url) {
+            const start = performance.now();
+            try {
+                const meta = await fetchProxyHeaders(url, 10000);
+                const elapsed = Math.round(performance.now() - start);
+                const status = meta && meta.status != null ? Number(meta.status) : null;
+                const isUp = status != null ? status >= 200 && status < 500 : true;
+                return { isUp, statusCode: status, responseMs: elapsed, error: null, ts: Date.now() };
+            } catch (e) {
+                const elapsed = Math.round(performance.now() - start);
+                return { isUp: false, statusCode: null, responseMs: elapsed, error: String(e && e.message ? e.message : e || 'Check failed'), ts: Date.now() };
             }
-            if (!previous || !current) return alerts;
+        }
 
-            if (previous.isWordPress !== current.isWordPress) {
-                alerts.push({ level: 'bad', message: `WordPress detection changed (${previous.isWordPress ? 'Detected' : 'Not detected'} -> ${current.isWordPress ? 'Detected' : 'Not detected'})` });
+        function deriveMonitorAlerts(url, previous, current) {
+            const alerts = [];
+            if (!current) return alerts;
+            if (!current.isUp) {
+                alerts.push({ level: 'bad', message: `DOWN${current.error ? ': ' + current.error : ''}` });
             }
-            if (previous.securityScore != null && current.securityScore != null && (previous.securityScore - current.securityScore) >= 10) {
-                alerts.push({ level: 'bad', message: `Security score dropped by ${previous.securityScore - current.securityScore} points (${previous.securityScore} -> ${current.securityScore})` });
+            if (previous && previous.isUp === false && current.isUp === true) {
+                alerts.push({ level: 'warn', message: `Recovered (HTTP ${current.statusCode || 'n/a'})` });
             }
-            if (previous.confidence != null && current.confidence != null && (previous.confidence - current.confidence) >= 15) {
-                alerts.push({ level: 'warn', message: `Detection confidence dropped by ${previous.confidence - current.confidence}%` });
-            }
-            if (previous.version && current.version && previous.version !== current.version) {
-                alerts.push({ level: 'warn', message: `WordPress version changed (${previous.version} -> ${current.version})` });
-            }
-            if (previous.theme && current.theme && previous.theme !== current.theme) {
-                alerts.push({ level: 'warn', message: `Theme changed (${previous.theme} -> ${current.theme})` });
-            }
-            if ((current.pluginCount - previous.pluginCount) >= 3) {
-                alerts.push({ level: 'warn', message: `Plugin count increased significantly (${previous.pluginCount} -> ${current.pluginCount})` });
-            }
-            if (current.securityScore != null && current.securityScore < 40) {
-                alerts.push({ level: 'bad', message: `Security score is critically low (${current.securityScore}/100)` });
+            if (current.responseMs != null && current.responseMs > 4000) {
+                alerts.push({ level: 'warn', message: `High latency detected (${current.responseMs} ms)` });
             }
             return alerts;
         }
@@ -4199,7 +4240,7 @@
                 ts: Date.now()
             }));
             const next = [...stamped, ...existing];
-            if (next.length > 150) next.length = 150;
+            if (next.length > 200) next.length = 200;
             saveMonitorAlerts(next);
         }
 
@@ -4220,38 +4261,37 @@
             if (idx === -1) return;
             const target = targets[idx];
             const previous = target.lastSnapshot || null;
-            let errorText = null;
-            let nextSnapshot = null;
 
-            try {
-                const result = await detectWordPress(target.url);
-                nextSnapshot = summarizeMonitorSnapshot(result);
-                target.lastSnapshot = nextSnapshot;
-                target.lastError = null;
-                saveToHistory(result);
-            } catch (e) {
-                errorText = String(e && e.message ? e.message : e || 'Unknown error');
-                target.lastError = errorText;
-            }
-
-            target.lastRunAt = Date.now();
+            const check = await performUptimeCheck(target.url);
+            target.lastSnapshot = summarizeUptimeSnapshot(check);
+            target.lastError = check.error || null;
+            target.lastRunAt = check.ts;
             target.nextRunAt = monitorNextRunAt(target.frequency, target.lastRunAt);
+            target.history = Array.isArray(target.history) ? target.history : [];
+            target.history.unshift({
+                ts: check.ts,
+                isUp: !!check.isUp,
+                statusCode: check.statusCode,
+                responseMs: check.responseMs
+            });
+            if (target.history.length > 120) target.history.length = 120;
+
             targets[idx] = target;
             saveMonitorTargets(targets);
 
-            const generatedAlerts = deriveMonitorAlerts(target.url, previous, nextSnapshot, errorText);
+            const generatedAlerts = deriveMonitorAlerts(target.url, previous, target.lastSnapshot);
             addMonitorAlerts(target.url, generatedAlerts);
-            if (generatedAlerts.length > 0) showToast(`${generatedAlerts.length} monitor alert(s) on ${target.url}`);
+            if (generatedAlerts.length > 0) showToast(`${generatedAlerts.length} uptime alert(s) on ${target.url}`);
         }
 
         async function runMonitorNow(id) {
             document.getElementById('monitorErrorMsg').classList.remove('active');
-            setMonitorLoading(true, 'Running monitor scan...');
+            setMonitorLoading(true, 'Running uptime check...');
             try {
                 await runOneMonitorTarget(id);
                 renderMonitoring();
             } catch (e) {
-                showError('monitorErrorMsg', String(e && e.message ? e.message : e || 'Monitor scan failed.'));
+                showError('monitorErrorMsg', String(e && e.message ? e.message : e || 'Uptime check failed.'));
             } finally {
                 setMonitorLoading(false);
             }
@@ -4261,20 +4301,20 @@
             const targets = getMonitorTargets();
             const due = targets.filter(t => !t.nextRunAt || t.nextRunAt <= Date.now());
             if (due.length === 0) {
-                showToast('No due monitor scans right now');
+                showToast('No due uptime checks right now');
                 return;
             }
 
             document.getElementById('monitorErrorMsg').classList.remove('active');
-            setMonitorLoading(true, `Running due scans (0/${due.length})...`);
+            setMonitorLoading(true, `Running due uptime checks (0/${due.length})...`);
             try {
                 for (let i = 0; i < due.length; i += 1) {
-                    setMonitorLoading(true, `Running due scans (${i + 1}/${due.length})...`);
+                    setMonitorLoading(true, `Running due uptime checks (${i + 1}/${due.length})...`);
                     await runOneMonitorTarget(due[i].id);
                 }
                 renderMonitoring();
             } catch (e) {
-                showError('monitorErrorMsg', String(e && e.message ? e.message : e || 'Failed while running due scans.'));
+                showError('monitorErrorMsg', String(e && e.message ? e.message : e || 'Failed while running due uptime checks.'));
             } finally {
                 setMonitorLoading(false);
             }
@@ -4288,7 +4328,9 @@
 
         function addMonitorTarget() {
             const raw = document.getElementById('monitorUrlInput').value.trim();
-            const freq = document.getElementById('monitorFrequency').value === 'weekly' ? 'weekly' : 'daily';
+            const allowed = new Set(['1m', '5m', '15m', '60m']);
+            const selected = document.getElementById('monitorFrequency').value;
+            const freq = allowed.has(selected) ? selected : '5m';
             document.getElementById('monitorErrorMsg').classList.remove('active');
 
             if (!raw) {
@@ -4309,7 +4351,7 @@
             if (existingIdx >= 0) {
                 targets[existingIdx].frequency = freq;
                 saveMonitorTargets(targets);
-                showToast('Monitor target updated');
+                showToast('Uptime target updated');
             } else {
                 targets.unshift({
                     id: String(Date.now()) + '-' + Math.random().toString(36).slice(2, 8),
@@ -4319,10 +4361,11 @@
                     lastRunAt: null,
                     nextRunAt: Date.now(),
                     lastSnapshot: null,
-                    lastError: null
+                    lastError: null,
+                    history: []
                 });
                 saveMonitorTargets(targets);
-                showToast('Monitor target added');
+                showToast('Uptime target added');
             }
 
             document.getElementById('monitorUrlInput').value = '';
@@ -4332,7 +4375,7 @@
         function clearMonitorAlerts() {
             saveMonitorAlerts([]);
             renderMonitoring();
-            showToast('Monitor alerts cleared');
+            showToast('Uptime alerts cleared');
         }
 
         function renderMonitoring() {
@@ -4344,30 +4387,33 @@
             targets.sort((a, b) => (a.nextRunAt || 0) - (b.nextRunAt || 0));
 
             if (targets.length === 0) {
-                targetsEl.innerHTML = '<div class="monitor-empty">No targets yet. Add a URL and frequency to start monitoring.</div>';
+                targetsEl.innerHTML = '<div class="monitor-empty">No uptime targets yet. Add a URL and interval to begin monitoring.</div>';
             } else {
                 targetsEl.innerHTML = targets.map(t => {
                     const due = !t.nextRunAt || t.nextRunAt <= Date.now();
                     const snapshot = t.lastSnapshot;
+                    const uptimeRate = computeUptimeRate(t.history);
+                    const statusBadge = snapshot ? (snapshot.isUp ? 'UP' : 'DOWN') : (due ? 'DUE' : 'SCHEDULED');
+                    const statusClass = snapshot ? (snapshot.isUp ? 'wp' : 'not-wp') : (due ? 'not-wp' : 'wp');
                     const summaryBits = [];
                     if (snapshot) {
-                        summaryBits.push(snapshot.isWordPress ? 'WP' : 'Not WP');
-                        if (snapshot.version) summaryBits.push('v' + snapshot.version);
-                        if (snapshot.securityScore != null) summaryBits.push('Security ' + snapshot.securityScore + '/100');
+                        if (snapshot.statusCode != null) summaryBits.push(`HTTP ${snapshot.statusCode}`);
+                        if (snapshot.responseMs != null) summaryBits.push(`${snapshot.responseMs} ms`);
                     }
-                    if (t.lastError) summaryBits.push('Last error');
+                    if (uptimeRate != null) summaryBits.push(`Uptime ${uptimeRate}%`);
+                    if (t.lastError) summaryBits.push(`Error: ${t.lastError}`);
 
                     return `<div class="monitor-item">
                         <div class="monitor-head">
                             <div class="monitor-url">${escapeHtml(t.url)}</div>
-                            <span class="history-badge ${due ? 'not-wp' : 'wp'}">${due ? 'Due' : 'Scheduled'}</span>
+                            <span class="history-badge ${statusClass}">${escapeHtml(statusBadge)}</span>
                         </div>
                         <div class="monitor-meta">
-                            Frequency: ${escapeHtml(t.frequency)} | Last Run: ${escapeHtml(formatMonitorTime(t.lastRunAt))} | Next Run: ${escapeHtml(formatMonitorTime(t.nextRunAt))}
-                            ${summaryBits.length ? `<br>Snapshot: ${escapeHtml(summaryBits.join(' | '))}` : ''}
+                            Interval: ${escapeHtml(t.frequency)} | Last Check: ${escapeHtml(formatMonitorTime(t.lastRunAt))} | Next Check: ${escapeHtml(formatMonitorTime(t.nextRunAt))}
+                            ${summaryBits.length ? `<br>Latest: ${escapeHtml(summaryBits.join(' | '))}` : ''}
                         </div>
                         <div class="monitor-actions">
-                            <button class="btn-secondary" style="padding:8px 12px;font-size:12px" onclick="runMonitorNow('${escapeHtml(t.id)}')">Run Now</button>
+                            <button class="btn-secondary" style="padding:8px 12px;font-size:12px" onclick="runMonitorNow('${escapeHtml(t.id)}')">Check Now</button>
                             <button class="btn-secondary" style="padding:8px 12px;font-size:12px" onclick="removeMonitorTarget('${escapeHtml(t.id)}')">Remove</button>
                         </div>
                     </div>`;
@@ -4376,9 +4422,9 @@
 
             const alerts = getMonitorAlerts();
             if (alerts.length === 0) {
-                alertsEl.innerHTML = '<div class="monitor-empty">No alerts yet.</div>';
+                alertsEl.innerHTML = '<div class="monitor-empty">No incidents yet.</div>';
             } else {
-                alertsEl.innerHTML = alerts.slice(0, 30).map(a => `
+                alertsEl.innerHTML = alerts.slice(0, 40).map(a => `
                     <div class="alert-item ${a.level === 'bad' ? 'bad' : ''}">
                         <div style="font-weight:600;color:var(--text-bright)">${escapeHtml(a.url || '')}</div>
                         <div style="color:var(--text-sub);margin:3px 0">${escapeHtml(a.message || '')}</div>
