@@ -162,7 +162,7 @@
             }
             .external-nav.open .external-nav-menu { display: flex; }
             .external-nav-btn { font-size: 12px; padding: 9px 10px; width: 100%; text-align: left; }
-            .external-theme-toggle { width: 38px; height: 38px; }
+            .external-theme-toggle { width: 38px; height: 38px; pointer-events: auto; }
             .container { padding-top: 56px; }
         }
 
@@ -1462,8 +1462,8 @@
     <nav class="external-nav" id="externalNav">
         <button class="external-nav-toggle" id="externalNavToggle" onclick="toggleExternalNav()" aria-label="Toggle menu" aria-expanded="false">&#9776;</button>
         <div class="external-nav-menu" id="externalNavMenu">
-            <button class="external-nav-btn active" id="navInspectorBtn" onclick="switchTab('single')">Inspector</button>
-            <button class="external-nav-btn" id="navEmailBtn" onclick="switchTab('email')">Email Check</button>
+            <button class="external-nav-btn active" id="navInspectorBtn" onclick="switchTab('single')">WP Inspector</button>
+            <button class="external-nav-btn" id="navEmailBtn" onclick="switchTab('email')">Email Deliverability Checker</button>
             <button class="external-nav-btn" id="navMonitoringBtn" onclick="switchTab('monitoring')">Monitoring</button>
         </div>
         <button class="external-theme-toggle" onclick="toggleTheme()" title="Toggle light/dark mode">
