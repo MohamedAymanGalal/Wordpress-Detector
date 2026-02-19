@@ -1478,6 +1478,23 @@
             return /^(https?:\/\/)?([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}/i.test(str);
         }
 
+        function normalizeBulkUrls(rawUrls) {
+            const unique = new Set();
+            const normalized = [];
+            for (const raw of rawUrls) {
+                const candidate = String(raw || '').trim();
+                if (!candidate) continue;
+                try {
+                    const url = normalizeUrl(candidate).origin;
+                    if (!unique.has(url)) {
+                        unique.add(url);
+                        normalized.push(url);
+                    }
+                } catch { /* skip invalid */ }
+            }
+            return normalized;
+        }
+
         function setUploadedUrls(urls, fileName) {
             uploadedUrls = urls;
             if (urls.length > 0) {
@@ -1516,6 +1533,7 @@
         }
 
         let fetchTimeout = 12000;
+        const BULK_CONCURRENCY = 8;
 
         // Detects proxy error/default pages and corporate network block pages.
         function analyzeProxyResponse(text) {
@@ -2196,6 +2214,85 @@
                 }
             } catch { /* ignore */ }
             return plugins;
+        }
+
+        // Fast path for bulk scans: keeps high-signal checks, skips heavy security/SSL/domain work.
+        async function detectWordPressFast(urlString) {
+            const baseUrl = normalizeUrl(urlString);
+            const checks = {};
+            let version = null;
+            let theme = null;
+            const plugins = new Set();
+
+            const html = await fetchText(baseUrl.origin, 7000);
+
+            const generatorMatch = html.match(/<meta[^>]+name=["']generator["'][^>]+content=["']([^"']*wordpress[^"']*)["']/i)
+                || html.match(/<meta[^>]+content=["']([^"']*wordpress[^"']*)["'][^>]+name=["']generator["']/i);
+            checks['Meta Generator Tag'] = !!generatorMatch;
+            if (generatorMatch) {
+                const vMatch = generatorMatch[1].match(/wordpress\s*\.?\s*([\d.]+)/i);
+                if (vMatch) version = vMatch[1];
+            }
+
+            checks['wp-content/wp-includes Paths'] = /\/wp-content\//i.test(html) || /\/wp-includes\//i.test(html);
+            checks['WordPress Scripts (emoji/embed)'] = /wp-emoji-release/i.test(html) || /wp-embed\.min\.js/i.test(html);
+
+            const themeMatches = html.matchAll(/\/wp-content\/themes\/([a-z0-9_-]+)\//gi);
+            const themes = new Set();
+            for (const m of themeMatches) themes.add(m[1]);
+            if (themes.size > 0) theme = [...themes][0];
+            checks['Theme Detected'] = themes.size > 0;
+
+            const pageBuilder = detectPageBuilder(html);
+            const htmlPlugins = extractPluginsFromHtml(html);
+            for (const p of htmlPlugins) plugins.add(p);
+
+            const [apiResult, loginResult] = await Promise.allSettled([
+                fetchText(baseUrl.origin + '/wp-json/', 5000),
+                proxyFetch(baseUrl.origin + '/wp-login.php', 5000).then(t => /user_login/i.test(t) && /wp-submit/i.test(t))
+            ]);
+
+            if (apiResult.status === 'fulfilled') {
+                try {
+                    const d = JSON.parse(apiResult.value);
+                    checks['REST API (/wp-json/)'] = !!(d && (d.name || d.namespaces));
+                } catch {
+                    checks['REST API (/wp-json/)'] = false;
+                }
+                const apiPlugins = extractPluginsFromApi(apiResult.value);
+                for (const p of apiPlugins) plugins.add(p);
+            } else {
+                checks['REST API (/wp-json/)'] = false;
+            }
+
+            checks['wp-login.php'] = loginResult.status === 'fulfilled' && !!loginResult.value;
+            checks['Plugins Detected'] = plugins.size > 0;
+
+            const passed = Object.values(checks).filter(Boolean).length;
+            const total = Object.keys(checks).length;
+            const strongSignals = [
+                checks['Meta Generator Tag'],
+                checks['wp-content/wp-includes Paths'],
+                checks['WordPress Scripts (emoji/embed)'],
+                checks['Theme Detected'],
+                checks['REST API (/wp-json/)']
+            ].filter(Boolean).length;
+            const isWordPress = (strongSignals >= 1 && passed >= 2) || passed >= 3;
+            const confidence = Math.round((passed / total) * 100);
+
+            return {
+                url: baseUrl.origin,
+                isWordPress,
+                confidence,
+                checks,
+                version,
+                theme,
+                pageBuilder,
+                plugins: [...plugins],
+                ssl: null,
+                domainExpiry: null,
+                security: null
+            };
         }
 
         // --- Core detection logic (shared by single & bulk) ---
@@ -2893,6 +2990,15 @@
 
             if (urls.length === 0) return;
 
+            const rawCount = urls.length;
+            urls = normalizeBulkUrls(urls);
+            const skippedCount = rawCount - urls.length;
+            if (skippedCount > 0) showToast(`${skippedCount} invalid/duplicate URL(s) skipped`);
+            if (urls.length === 0) {
+                showError('bulkErrorMsg', 'No valid URLs to scan.');
+                return;
+            }
+
             const btn = document.getElementById('bulkScanBtn');
             const errorMsg = document.getElementById('bulkErrorMsg');
             const progressEl = document.getElementById('bulkProgress');
@@ -2910,7 +3016,7 @@
 
             let completed = 0;
             let blockedByPolicyCount = 0;
-            const CONCURRENCY = 3;
+            const CONCURRENCY = BULK_CONCURRENCY;
             const bulkStartTime = Date.now();
             const bulkTimerInterval = setInterval(() => {
                 const elapsed = ((Date.now() - bulkStartTime) / 1000).toFixed(1);
@@ -2925,7 +3031,7 @@
                 const batchResults = await Promise.allSettled(
                     batch.map(async (url) => {
                         try {
-                            const result = await detectWordPress(url);
+                            const result = await detectWordPressFast(url);
                             return result;
                         } catch (err) {
                             if (isNetworkPolicyError(err)) blockedByPolicyCount++;
@@ -2962,8 +3068,6 @@
                 }
 
                 progressBar.style.width = `${(completed / urls.length) * 100}%`;
-
-                if (i + CONCURRENCY < urls.length) await delay(1000);
             }
 
             clearInterval(bulkTimerInterval);
@@ -3020,7 +3124,7 @@
             let completed = 0;
             let blockedByPolicyCount = 0;
             const total = errorIndices.length;
-            const CONCURRENCY = 3;
+            const CONCURRENCY = BULK_CONCURRENCY;
             const startTime = Date.now();
             const timerInterval = setInterval(() => {
                 const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
@@ -3036,7 +3140,7 @@
                 const batchResults = await Promise.allSettled(
                     batch.map(async (idx) => {
                         try {
-                            const result = await detectWordPress(bulkResultsData[idx].url);
+                            const result = await detectWordPressFast(bulkResultsData[idx].url);
                             return { idx, result };
                         } catch (err) {
                             if (isNetworkPolicyError(err)) blockedByPolicyCount++;
@@ -3055,7 +3159,6 @@
                 }
 
                 progressBar.style.width = `${(completed / total) * 100}%`;
-                if (i + CONCURRENCY < errorIndices.length) await delay(1500);
             }
 
             clearInterval(timerInterval);
