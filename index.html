@@ -799,6 +799,38 @@
         .sub-tab-content { display: none; }
         .sub-tab-content.active { display: block; }
 
+        .email-sub-tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 14px;
+            background: var(--bg);
+            border-radius: 8px;
+            padding: 3px;
+        }
+
+        .email-sub-tab {
+            flex: 1;
+            padding: 8px 12px;
+            border: none;
+            border-radius: 6px;
+            background: transparent;
+            color: var(--text-muted);
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .email-sub-tab.active {
+            background: var(--btn-secondary-bg);
+            color: var(--text-bright);
+        }
+
+        .email-sub-tab:not(.active):hover { color: var(--text); }
+
+        .email-sub-content { display: none; }
+        .email-sub-content.active { display: block; }
+
         /* Upload area */
         .upload-area {
             border: 2px dashed var(--border);
@@ -1539,46 +1571,56 @@
 
             <!-- Email Deliverability Tab -->
             <div class="tab-content" id="tab-email">
-                <div class="input-group">
-                    <input type="text" id="mailDomainInput" placeholder="e.g. yourdomain.com or info@yourdomain.com" />
-                    <button id="mailCheckBtn" onclick="runMailCheck()">Check Deliverability</button>
+                <div class="email-sub-tabs">
+                    <button class="email-sub-tab active" onclick="switchEmailSubTab('single')">Single Check</button>
+                    <button class="email-sub-tab" onclick="switchEmailSubTab('bulk')">Bulk Check</button>
                 </div>
-                <div class="result-details" style="margin-bottom:14px">
-                    <div class="details-title">Bulk Email Deliverability Check</div>
-                    <textarea id="mailBulkInput" placeholder="Enter one domain or email per line, e.g.&#10;example.com&#10;info@anotherdomain.com"></textarea>
-                    <div class="bulk-actions">
-                        <button id="mailBulkRunBtn" onclick="runMailBulkCheck()">Run Bulk Email Checks</button>
-                        <button class="btn-secondary" onclick="clearMailBulk()">Clear</button>
+
+                <div class="email-sub-content active" id="email-sub-single">
+                    <div class="input-group">
+                        <input type="text" id="mailDomainInput" placeholder="e.g. yourdomain.com or info@yourdomain.com" />
+                        <button id="mailCheckBtn" onclick="runMailCheck()">Check Deliverability</button>
                     </div>
-                    <div class="bulk-actions-row" id="mailBulkActionsRow" style="display:none">
-                        <button class="action-btn" onclick="exportMailBulkCSV()">Export CSV</button>
-                        <button class="action-btn" onclick="copyMailBulkResults()">Copy Results</button>
-                    </div>
-                    <div class="loading" id="mailBulkLoading">
+                    <div class="error-msg" id="mailErrorMsg"></div>
+                    <div class="loading" id="mailLoading">
                         <div class="spinner"></div>
-                        <div class="loading-text" id="mailBulkLoadingText">Running bulk email deliverability checks...</div>
+                        <div class="loading-text" id="mailLoadingText">Checking DNS email records...</div>
                     </div>
-                    <div class="error-msg" id="mailBulkErrorMsg"></div>
-                    <div class="bulk-results" id="mailBulkResults"></div>
+                    <div class="results" id="mailResults">
+                        <div class="verdict" id="mailVerdict">
+                            <div class="verdict-label">Deliverability</div>
+                            <div class="verdict-text" id="mailVerdictText"></div>
+                            <div class="confidence" id="mailScoreText"></div>
+                        </div>
+                        <div class="result-details" style="margin-top:14px">
+                            <div class="details-title">Checks</div>
+                            <div id="mailChecksRows"></div>
+                        </div>
+                        <div class="result-details" style="margin-top:14px">
+                            <div class="details-title">Recommendations</div>
+                            <div id="mailRecsRows"></div>
+                        </div>
+                    </div>
                 </div>
-                <div class="error-msg" id="mailErrorMsg"></div>
-                <div class="loading" id="mailLoading">
-                    <div class="spinner"></div>
-                    <div class="loading-text" id="mailLoadingText">Checking DNS email records...</div>
-                </div>
-                <div class="results" id="mailResults">
-                    <div class="verdict" id="mailVerdict">
-                        <div class="verdict-label">Deliverability</div>
-                        <div class="verdict-text" id="mailVerdictText"></div>
-                        <div class="confidence" id="mailScoreText"></div>
-                    </div>
-                    <div class="result-details" style="margin-top:14px">
-                        <div class="details-title">Checks</div>
-                        <div id="mailChecksRows"></div>
-                    </div>
-                    <div class="result-details" style="margin-top:14px">
-                        <div class="details-title">Recommendations</div>
-                        <div id="mailRecsRows"></div>
+
+                <div class="email-sub-content" id="email-sub-bulk">
+                    <div class="result-details">
+                        <div class="details-title">Bulk Email Deliverability Check</div>
+                        <textarea id="mailBulkInput" placeholder="Enter one domain or email per line, e.g.&#10;example.com&#10;info@anotherdomain.com"></textarea>
+                        <div class="bulk-actions">
+                            <button id="mailBulkRunBtn" onclick="runMailBulkCheck()">Run Bulk Email Checks</button>
+                            <button class="btn-secondary" onclick="clearMailBulk()">Clear</button>
+                        </div>
+                        <div class="bulk-actions-row" id="mailBulkActionsRow" style="display:none">
+                            <button class="action-btn" onclick="exportMailBulkCSV()">Export CSV</button>
+                            <button class="action-btn" onclick="copyMailBulkResults()">Copy Results</button>
+                        </div>
+                        <div class="loading" id="mailBulkLoading">
+                            <div class="spinner"></div>
+                            <div class="loading-text" id="mailBulkLoadingText">Running bulk email deliverability checks...</div>
+                        </div>
+                        <div class="error-msg" id="mailBulkErrorMsg"></div>
+                        <div class="bulk-results" id="mailBulkResults"></div>
                     </div>
                 </div>
             </div>
@@ -1784,6 +1826,16 @@
             document.querySelectorAll('.sub-tab-content').forEach(t => t.classList.remove('active'));
             document.getElementById('subtab-' + tab).classList.add('active');
             document.querySelectorAll('.sub-tab')[tab === 'type' ? 0 : 1].classList.add('active');
+        }
+
+        function switchEmailSubTab(tab) {
+            document.querySelectorAll('.email-sub-tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.email-sub-content').forEach(t => t.classList.remove('active'));
+            const target = document.getElementById('email-sub-' + tab);
+            if (target) target.classList.add('active');
+            const tabs = document.querySelectorAll('.email-sub-tab');
+            const idx = tab === 'single' ? 0 : 1;
+            if (tabs[idx]) tabs[idx].classList.add('active');
         }
 
         // --- File upload ---
