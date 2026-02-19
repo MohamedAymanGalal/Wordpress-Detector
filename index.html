@@ -54,6 +54,52 @@
             transition: background 0.3s, color 0.3s;
         }
 
+        .external-nav {
+            position: fixed;
+            top: 14px;
+            left: 14px;
+            z-index: 30;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: wrap;
+            max-width: 48vw;
+        }
+
+        .external-nav-btn {
+            padding: 8px 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--card-bg);
+            color: var(--text-muted);
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .external-nav-btn:hover {
+            color: var(--text-bright);
+            border-color: var(--text-muted);
+        }
+
+        .external-nav-btn.active {
+            background: var(--accent);
+            color: var(--bg);
+            border-color: var(--accent);
+        }
+
+        @media (max-width: 700px) {
+            .external-nav {
+                top: 10px;
+                left: 10px;
+                gap: 6px;
+                max-width: calc(100vw - 20px);
+            }
+            .external-nav-btn { font-size: 11px; padding: 7px 10px; }
+            .container { padding-top: 56px; }
+        }
+
         .container {
             width: 100%;
             max-width: 1100px;
@@ -1323,6 +1369,11 @@
     </style>
 </head>
 <body>
+    <nav class="external-nav">
+        <button class="external-nav-btn active" id="navInspectorBtn" onclick="switchTab('single')">Inspector</button>
+        <button class="external-nav-btn" id="navEmailBtn" onclick="switchTab('email')">Email Check</button>
+        <button class="external-nav-btn" id="navMonitoringBtn" onclick="switchTab('monitoring')">Monitoring</button>
+    </nav>
     <div class="container">
         <div class="card">
             <div class="header">
@@ -1335,8 +1386,6 @@
 
             <div class="tabs">
                 <button class="tab active" onclick="switchTab('single')">Single URL</button>
-                <button class="tab" onclick="switchTab('email')">Email Check</button>
-                <button class="tab" onclick="switchTab('monitoring')">Monitoring</button>
                 <button class="tab" onclick="switchTab('bulk')">Bulk Check</button>
                 <button class="tab" onclick="switchTab('history')">History</button>
             </div>
@@ -1657,12 +1706,26 @@
         // --- Tab switching ---
         function switchTab(tab) {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.external-nav-btn').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
             document.querySelector(`.tab-content#tab-${tab}`).classList.add('active');
-            const tabIndex = { single: 0, email: 1, monitoring: 2, bulk: 3, history: 4 };
+
+            const tabIndex = { single: 0, bulk: 1, history: 2 };
             const tabs = document.querySelectorAll('.tab');
             const idx = tabIndex[tab];
             if (idx != null && tabs[idx]) tabs[idx].classList.add('active');
+
+            if (tab === 'single' || tab === 'bulk' || tab === 'history') {
+                const inspectorBtn = document.getElementById('navInspectorBtn');
+                if (inspectorBtn) inspectorBtn.classList.add('active');
+            } else if (tab === 'email') {
+                const emailBtn = document.getElementById('navEmailBtn');
+                if (emailBtn) emailBtn.classList.add('active');
+            } else if (tab === 'monitoring') {
+                const monitoringBtn = document.getElementById('navMonitoringBtn');
+                if (monitoringBtn) monitoringBtn.classList.add('active');
+            }
+
             if (tab === 'history') renderHistory();
             if (tab === 'monitoring') renderMonitoring();
         }
