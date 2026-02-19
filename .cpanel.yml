@@ -1,7 +1,6 @@
----
 deployment:
   tasks:
     - export DEPLOYPATH=/home/elegantw/public_html/wp-inspector
-    - /bin/mkdir -p "$DEPLOYPATH"
-    - /bin/cp index.html "$DEPLOYPATH/index.html"
-    - /bin/cp proxy.php "$DEPLOYPATH/proxy.php"
+    - /bin/mkdir -p $DEPLOYPATH
+    - /bin/cp index.html $DEPLOYPATH/index.html
+    - /bin/cp proxy.php $DEPLOYPATH/proxy.php
