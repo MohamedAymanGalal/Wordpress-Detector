@@ -1085,6 +1085,32 @@
             color: var(--text-muted);
             line-height: 1.5;
         }
+        .vuln-summary {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+        }
+        .vuln-item {
+            border-top: 1px solid var(--border);
+            padding: 10px 0;
+        }
+        .vuln-item:first-child { border-top: none; padding-top: 4px; }
+        .vuln-title {
+            font-size: 13px;
+            color: var(--text-bright);
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+        .vuln-meta {
+            font-size: 12px;
+            color: var(--text-muted);
+            line-height: 1.45;
+        }
+        .vuln-empty {
+            font-size: 12px;
+            color: var(--text-muted);
+            padding: 4px 0;
+        }
         .suggestion-code {
             display: block;
             margin-top: 6px;
@@ -1282,6 +1308,19 @@
                             <div id="securityFindings"></div>
                             <button class="suggestions-toggle" id="suggestionsToggle" onclick="toggleSuggestions()" style="display:none">How to Improve Your Score</button>
                             <div id="securitySuggestions" class="suggestions-container"></div>
+                        </div>
+                    </div>
+
+                    <div class="accordion" id="accordionVulns" style="display:none">
+                        <div class="accordion-header" onclick="toggleAccordion('accordionVulns')">
+                            <div class="accordion-header-left">
+                                <span>Known Vulnerabilities</span>
+                                <span class="accordion-badge" id="vulnBadge"></span>
+                            </div>
+                            <span class="accordion-arrow">&#9660;</span>
+                        </div>
+                        <div class="accordion-body">
+                            <div id="vulnContent" class="vuln-empty">No data yet.</div>
                         </div>
                     </div>
 
@@ -2053,6 +2092,128 @@
             }
         }
 
+        async function fetchVulnData(type, value) {
+            const params = new URLSearchParams({ action: 'wpvuln', type });
+            if (type === 'core') params.set('version', value);
+            else params.set('slug', value);
+            const resp = await fetch(`proxy.php?${params.toString()}`);
+            if (!resp.ok) {
+                const msg = await resp.text().catch(() => '');
+                throw new Error(msg || `Vulnerability lookup failed (${resp.status})`);
+            }
+            return await resp.json();
+        }
+
+        function normalizeWpscanVulnerabilities(payload) {
+            const candidates = [];
+            if (payload && typeof payload === 'object') {
+                if (Array.isArray(payload.vulnerabilities)) {
+                    candidates.push(...payload.vulnerabilities);
+                } else {
+                    for (const val of Object.values(payload)) {
+                        if (val && typeof val === 'object' && Array.isArray(val.vulnerabilities)) {
+                            candidates.push(...val.vulnerabilities);
+                            break;
+                        }
+                    }
+                }
+            }
+            return candidates.map(v => ({
+                title: v.title || 'Untitled vulnerability',
+                fixedIn: v.fixed_in || v.fixed_in_version || null,
+                cvss: v.cvss || v.cvss_score || null,
+                cve: v.references && Array.isArray(v.references.cve) ? v.references.cve : []
+            }));
+        }
+
+        function renderVulnerabilityResults(items, scannedCount, cappedCount) {
+            const accordion = document.getElementById('accordionVulns');
+            const badge = document.getElementById('vulnBadge');
+            const content = document.getElementById('vulnContent');
+
+            accordion.style.display = 'block';
+            accordion.classList.add('open');
+
+            if (items.length === 0) {
+                badge.textContent = '0';
+                badge.className = 'accordion-badge green';
+                content.innerHTML = `<div class="vuln-empty">No known vulnerabilities found in scanned components (${scannedCount}${cappedCount > 0 ? `, ${cappedCount} skipped` : ''}).</div>`;
+                return;
+            }
+
+            const severityClass = items.length >= 10 ? 'red' : items.length >= 3 ? 'yellow' : 'green';
+            badge.textContent = `${items.length}`;
+            badge.className = `accordion-badge ${severityClass}`;
+            content.innerHTML = `
+                <div class="vuln-summary">Found ${items.length} known vulnerabilities across scanned components (${scannedCount}${cappedCount > 0 ? `, ${cappedCount} skipped` : ''}).</div>
+                ${items.slice(0, 40).map(v => `
+                    <div class="vuln-item">
+                        <div class="vuln-title">${escapeHtml(v.title)}</div>
+                        <div class="vuln-meta">Component: ${escapeHtml(v.component)}</div>
+                        ${v.fixedIn ? `<div class="vuln-meta">Fixed In: ${escapeHtml(v.fixedIn)}</div>` : ''}
+                        ${v.cvss != null ? `<div class="vuln-meta">CVSS: ${escapeHtml(v.cvss)}</div>` : ''}
+                        ${v.cve.length > 0 ? `<div class="vuln-meta">CVE: ${escapeHtml(v.cve.join(', '))}</div>` : ''}
+                    </div>
+                `).join('')}
+                ${items.length > 40 ? `<div class="vuln-empty">Showing first 40 items.</div>` : ''}
+            `;
+        }
+
+        async function runVulnerabilityLookup(result) {
+            const accordion = document.getElementById('accordionVulns');
+            const badge = document.getElementById('vulnBadge');
+            const content = document.getElementById('vulnContent');
+            if (!result || !result.isWordPress) {
+                accordion.style.display = 'none';
+                return;
+            }
+
+            accordion.style.display = 'block';
+            accordion.classList.add('open');
+            badge.textContent = '...';
+            badge.className = 'accordion-badge blue';
+            content.innerHTML = '<div class="vuln-empty">Checking known vulnerabilities...</div>';
+
+            const jobs = [];
+            if (result.version) jobs.push({ type: 'core', value: result.version, component: `WordPress ${result.version}` });
+            if (result.theme) jobs.push({ type: 'theme', value: result.theme, component: `Theme: ${result.theme}` });
+            for (const p of (result.plugins || []).slice(0, 15)) {
+                jobs.push({ type: 'plugin', value: p, component: `Plugin: ${p}` });
+            }
+            const cappedCount = Math.max(0, (result.plugins || []).length - 15);
+            if (jobs.length === 0) {
+                badge.textContent = '-';
+                badge.className = 'accordion-badge blue';
+                content.innerHTML = '<div class="vuln-empty">Insufficient component/version data for vulnerability lookup.</div>';
+                return;
+            }
+
+            const items = [];
+            const CHUNK = 4;
+            let missingApiToken = false;
+            for (let i = 0; i < jobs.length; i += CHUNK) {
+                const batch = jobs.slice(i, i + CHUNK);
+                const settled = await Promise.allSettled(batch.map(async (job) => {
+                    const payload = await fetchVulnData(job.type, job.value);
+                    const vulns = normalizeWpscanVulnerabilities(payload).map(v => ({ ...v, component: job.component }));
+                    return vulns;
+                }));
+                for (const s of settled) {
+                    if (s.status === 'fulfilled') items.push(...s.value);
+                    else if (String(s.reason && s.reason.message || '').toLowerCase().includes('token')) missingApiToken = true;
+                }
+            }
+
+            if (missingApiToken && items.length === 0) {
+                badge.textContent = 'N/A';
+                badge.className = 'accordion-badge yellow';
+                content.innerHTML = '<div class="vuln-empty">Vulnerability API token is not configured on the server. Set `WPSCAN_API_TOKEN` for lookup results.</div>';
+                return;
+            }
+
+            renderVulnerabilityResults(items, jobs.length, cappedCount);
+        }
+
         // --- Security score calculation ---
         function buildSecurityData({ ssl, version, versionExposed, xmlrpcOpen, loginExposed, readmeExposed, directoryListing, feedExposesVersion }) {
             const findings = [];
@@ -2669,6 +2830,7 @@
                 displayResults(item.isWordPress, item.confidence, item.checks, item.version, item.theme, item.pageBuilder || null, item.plugins || [], null, item.ssl || null, item.security || null, item.domainExpiry || null);
                 if (item.isWordPress) {
                     fetchPageSpeed(item.url).then(psi => renderPageSpeed(psi)).catch(() => renderPageSpeed(null));
+                    runVulnerabilityLookup(item).catch(() => {});
                 }
             } else {
                 // Old history entry without checks — re-scan
@@ -2726,6 +2888,9 @@
             document.getElementById('accordionSsl').style.display = 'none';
             document.getElementById('accordionPagespeed').style.display = 'none';
             document.getElementById('accordionSecurity').style.display = 'none';
+            document.getElementById('accordionVulns').style.display = 'none';
+            document.getElementById('vulnBadge').textContent = '';
+            document.getElementById('vulnContent').innerHTML = '<div class="vuln-empty">No data yet.</div>';
             document.getElementById('shareBtn').classList.remove('active');
             document.getElementById('exportPdfBtn').classList.remove('active');
 
@@ -2781,6 +2946,7 @@
                 // Fetch PageSpeed in background for WordPress sites
                 if (result.isWordPress) {
                     fetchPageSpeed(result.url).then(psi => renderPageSpeed(psi)).catch(() => renderPageSpeed(null));
+                    runVulnerabilityLookup(result).catch(() => {});
                 }
             } catch (err) {
                 document.getElementById('results').classList.remove('active');
@@ -2966,6 +3132,10 @@
                 }
             } else {
                 accordionSecurity.style.display = 'none';
+            }
+
+            if (!isWordPress) {
+                document.getElementById('accordionVulns').style.display = 'none';
             }
 
             document.getElementById('shareBtn').classList.add('active');
