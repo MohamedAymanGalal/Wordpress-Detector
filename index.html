@@ -2137,7 +2137,6 @@
             if (!psi) {
                 scoresEl.style.display = 'none';
                 accordion.style.display = 'block';
-                accordion.classList.add('open');
                 psiBadge.textContent = 'Unavailable';
                 psiBadge.className = 'accordion-badge yellow';
                 loadingEl.style.display = 'block';
@@ -2365,7 +2364,6 @@
             const content = document.getElementById('vulnContent');
 
             accordion.style.display = 'block';
-            accordion.classList.add('open');
 
             if (items.length === 0) {
                 badge.textContent = '0';
@@ -2402,7 +2400,6 @@
             }
 
             accordion.style.display = 'block';
-            accordion.classList.add('open');
             badge.textContent = '...';
             badge.className = 'accordion-badge blue';
             content.innerHTML = '<div class="vuln-empty">Checking known vulnerabilities...</div>';
@@ -3182,9 +3179,39 @@
             document.getElementById('loadingText').textContent = text;
         }
 
-        // All check names used by detectWordPress, in order
+        const MAIN_ACCORDION_IDS = ['accordionOverview', 'accordionSsl', 'accordionInfra', 'accordionPagespeed', 'accordionSecurity', 'accordionVulns'];
+
+        function closeMainAccordions() {
+            MAIN_ACCORDION_IDS.forEach((accordionId) => {
+                const el = document.getElementById(accordionId);
+                if (el) el.classList.remove('open');
+            });
+        }
+
+        function openMainAccordion(id) {
+            closeMainAccordions();
+            const target = document.getElementById(id);
+            if (target && target.style.display !== 'none') target.classList.add('open');
+        }
+
+        function setInitialMainAccordion() {
+            const overview = document.getElementById('accordionOverview');
+            if (overview && overview.style.display !== 'none') {
+                openMainAccordion('accordionOverview');
+                return;
+            }
+            const firstVisible = MAIN_ACCORDION_IDS.find((accordionId) => {
+                const el = document.getElementById(accordionId);
+                return el && el.style.display !== 'none';
+            });
+            if (firstVisible) openMainAccordion(firstVisible);
+        }
+
         function toggleAccordion(id) {
-            document.getElementById(id).classList.toggle('open');
+            const target = document.getElementById(id);
+            if (!target || target.style.display === 'none') return;
+            if (target.classList.contains('open')) return;
+            openMainAccordion(id);
         }
 
         function showLiveChecks() {
@@ -3328,7 +3355,6 @@
 
             if (hasInfo || hasPlugins) {
                 accordionOverview.style.display = 'block';
-                accordionOverview.classList.add('open');
                 const parts = [];
                 if (version) parts.push('v' + version);
                 if (theme) parts.push(theme);
@@ -3391,7 +3417,6 @@
             infraRows.innerHTML = '';
             if (isWordPress && infra && (infra.server || (infra.cdn && infra.cdn.length) || (infra.waf && infra.waf.length) || (infra.hostingHints && infra.hostingHints.length))) {
                 accordionInfra.style.display = 'block';
-                accordionInfra.classList.add('open');
                 const primary = infra.server || (infra.cdn && infra.cdn[0]) || (infra.waf && infra.waf[0]) || 'Detected';
                 infraBadge.textContent = escapeHtml(primary);
                 infraBadge.className = 'accordion-badge blue';
@@ -3477,6 +3502,8 @@
             if (!isWordPress) {
                 document.getElementById('accordionVulns').style.display = 'none';
             }
+
+            setInitialMainAccordion();
 
             document.getElementById('shareBtn').classList.add('active');
             document.getElementById('exportPdfBtn').classList.add('active');
