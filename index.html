@@ -1543,6 +1543,24 @@
                     <input type="text" id="mailDomainInput" placeholder="e.g. yourdomain.com or info@yourdomain.com" />
                     <button id="mailCheckBtn" onclick="runMailCheck()">Check Deliverability</button>
                 </div>
+                <div class="result-details" style="margin-bottom:14px">
+                    <div class="details-title">Bulk Email Deliverability Check</div>
+                    <textarea id="mailBulkInput" placeholder="Enter one domain or email per line, e.g.&#10;example.com&#10;info@anotherdomain.com"></textarea>
+                    <div class="bulk-actions">
+                        <button id="mailBulkRunBtn" onclick="runMailBulkCheck()">Run Bulk Email Checks</button>
+                        <button class="btn-secondary" onclick="clearMailBulk()">Clear</button>
+                    </div>
+                    <div class="bulk-actions-row" id="mailBulkActionsRow" style="display:none">
+                        <button class="action-btn" onclick="exportMailBulkCSV()">Export CSV</button>
+                        <button class="action-btn" onclick="copyMailBulkResults()">Copy Results</button>
+                    </div>
+                    <div class="loading" id="mailBulkLoading">
+                        <div class="spinner"></div>
+                        <div class="loading-text" id="mailBulkLoadingText">Running bulk email deliverability checks...</div>
+                    </div>
+                    <div class="error-msg" id="mailBulkErrorMsg"></div>
+                    <div class="bulk-results" id="mailBulkResults"></div>
+                </div>
                 <div class="error-msg" id="mailErrorMsg"></div>
                 <div class="loading" id="mailLoading">
                     <div class="spinner"></div>
@@ -3853,9 +3871,23 @@
             return { score, verdict, checks, recs: [...new Set(recs)] };
         }
 
+        async function performMailCheckDomain(domainInput) {
+            const domain = extractDomainFromInput(domainInput);
+            if (!domain || !/^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i.test(domain)) {
+                throw new Error('Invalid domain/email input');
+            }
+            const resp = await fetch(`proxy.php?action=mailcheck&domain=${encodeURIComponent(domain)}`);
+            if (!resp.ok) {
+                const txt = await resp.text().catch(() => '');
+                throw new Error(txt || `Mail check failed (${resp.status})`);
+            }
+            const data = await resp.json();
+            const summary = summarizeMailCheck(data);
+            return { domain, data, summary };
+        }
+
         async function runMailCheck() {
             const input = document.getElementById('mailDomainInput').value;
-            const domain = extractDomainFromInput(input);
             const btn = document.getElementById('mailCheckBtn');
             const err = document.getElementById('mailErrorMsg');
             const loading = document.getElementById('mailLoading');
@@ -3864,21 +3896,10 @@
             err.classList.remove('active');
             results.classList.remove('active');
 
-            if (!domain || !/^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i.test(domain)) {
-                showError('mailErrorMsg', 'Enter a valid domain or email address.');
-                return;
-            }
-
             btn.disabled = true;
             loading.classList.add('active');
             try {
-                const resp = await fetch(`proxy.php?action=mailcheck&domain=${encodeURIComponent(domain)}`);
-                if (!resp.ok) {
-                    const txt = await resp.text().catch(() => '');
-                    throw new Error(txt || `Mail check failed (${resp.status})`);
-                }
-                const data = await resp.json();
-                const summary = summarizeMailCheck(data);
+                const { domain, data, summary } = await performMailCheckDomain(input);
 
                 const verdict = document.getElementById('mailVerdict');
                 const verdictText = document.getElementById('mailVerdictText');
@@ -3903,11 +3924,119 @@
 
                 results.classList.add('active');
             } catch (e) {
-                showError('mailErrorMsg', String(e && e.message ? e.message : e || 'Mail check failed.'));
+                const msg = String(e && e.message ? e.message : e || 'Mail check failed.');
+                showError('mailErrorMsg', msg.includes('Invalid domain') ? 'Enter a valid domain or email address.' : msg);
             } finally {
                 loading.classList.remove('active');
                 btn.disabled = false;
             }
+        }
+
+        let mailBulkResultsData = [];
+
+        async function runMailBulkCheck() {
+            const input = document.getElementById('mailBulkInput').value.trim();
+            const btn = document.getElementById('mailBulkRunBtn');
+            const loading = document.getElementById('mailBulkLoading');
+            const loadingText = document.getElementById('mailBulkLoadingText');
+            const err = document.getElementById('mailBulkErrorMsg');
+            const resultsEl = document.getElementById('mailBulkResults');
+            const actionsRow = document.getElementById('mailBulkActionsRow');
+
+            err.classList.remove('active');
+            resultsEl.innerHTML = '';
+            actionsRow.style.display = 'none';
+            mailBulkResultsData = [];
+
+            if (!input) {
+                showError('mailBulkErrorMsg', 'Enter one domain/email per line.');
+                return;
+            }
+
+            const rawItems = input.split(/\r?\n/).map(v => v.trim()).filter(Boolean);
+            const unique = [...new Set(rawItems.map(extractDomainFromInput).filter(Boolean))];
+            if (unique.length === 0) {
+                showError('mailBulkErrorMsg', 'No valid domains/emails found.');
+                return;
+            }
+
+            btn.disabled = true;
+            loading.classList.add('active');
+
+            let completed = 0;
+            const CONCURRENCY = 6;
+            try {
+                for (let i = 0; i < unique.length; i += CONCURRENCY) {
+                    const batch = unique.slice(i, i + CONCURRENCY);
+                    const settled = await Promise.allSettled(batch.map(async (d) => {
+                        try {
+                            const out = await performMailCheckDomain(d);
+                            return { domain: out.domain, score: out.summary.score, verdict: out.summary.verdict, error: null };
+                        } catch (e) {
+                            return { domain: d, score: null, verdict: 'Error', error: String(e && e.message ? e.message : e || 'Failed') };
+                        }
+                    }));
+                    for (const s of settled) {
+                        if (s.status === 'fulfilled') mailBulkResultsData.push(s.value);
+                        completed += 1;
+                    }
+                    loadingText.textContent = `Running bulk email deliverability checks... (${completed}/${unique.length})`;
+                }
+
+                if (mailBulkResultsData.length === 0) {
+                    showError('mailBulkErrorMsg', 'No results returned.');
+                    return;
+                }
+
+                resultsEl.innerHTML = mailBulkResultsData.map(r => {
+                    const badgeClass = r.error ? 'error' : (r.score >= 70 ? 'wp' : 'not-wp');
+                    const badgeText = r.error ? 'Error' : `${r.score}/100`;
+                    const verdictText = r.error ? r.error : r.verdict;
+                    return `<div class="bulk-result-item">
+                        <span class="bulk-result-url" title="${escapeHtml(r.domain)}">${escapeHtml(r.domain)}</span>
+                        <div class="bulk-result-info">
+                            <span class="bulk-result-version">${escapeHtml(verdictText)}</span>
+                            <span class="bulk-badge ${badgeClass}">${escapeHtml(badgeText)}</span>
+                        </div>
+                    </div>`;
+                }).join('');
+
+                actionsRow.style.display = 'flex';
+                showToast(`Bulk email check complete (${mailBulkResultsData.length} domain(s))`);
+            } finally {
+                loading.classList.remove('active');
+                loadingText.textContent = 'Running bulk email deliverability checks...';
+                btn.disabled = false;
+            }
+        }
+
+        function clearMailBulk() {
+            document.getElementById('mailBulkInput').value = '';
+            document.getElementById('mailBulkResults').innerHTML = '';
+            document.getElementById('mailBulkActionsRow').style.display = 'none';
+            document.getElementById('mailBulkErrorMsg').classList.remove('active');
+            mailBulkResultsData = [];
+        }
+
+        function copyMailBulkResults() {
+            if (!mailBulkResultsData.length) return;
+            const text = mailBulkResultsData.map(r =>
+                `${r.domain} - ${r.error ? 'Error: ' + r.error : `${r.verdict} (${r.score}/100)`}`
+            ).join('\n');
+            copyToClipboard(text);
+        }
+
+        function exportMailBulkCSV() {
+            if (!mailBulkResultsData.length) return;
+            const rows = [['Domain', 'Score', 'Verdict', 'Error']];
+            for (const r of mailBulkResultsData) rows.push([r.domain, r.score != null ? r.score : '', r.verdict || '', r.error || '']);
+            const csv = rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'email-deliverability-bulk-results.csv';
+            a.click();
+            URL.revokeObjectURL(a.href);
         }
 
         const MONITOR_TARGETS_KEY = 'wp-monitor-targets';
@@ -4730,6 +4859,9 @@
         });
         document.getElementById('mailDomainInput').addEventListener('keydown', e => {
             if (e.key === 'Enter') runMailCheck();
+        });
+        document.getElementById('mailBulkInput').addEventListener('keydown', e => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') runMailBulkCheck();
         });
         document.getElementById('monitorUrlInput').addEventListener('keydown', e => {
             if (e.key === 'Enter') addMonitorTarget();
