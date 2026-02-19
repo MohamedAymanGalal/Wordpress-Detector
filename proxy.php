@@ -125,6 +125,57 @@ if (isset($_GET['action']) && $_GET['action'] === 'wpvuln') {
     exit;
 }
 
+// Server-side PageSpeed endpoint to avoid exposing API keys in frontend.
+if (isset($_GET['action']) && $_GET['action'] === 'pagespeed') {
+    $targetUrl = isset($_GET['url']) ? trim((string) $_GET['url']) : '';
+    if ($targetUrl === '') {
+        fail(400, 'Missing url parameter');
+    }
+    $parts = @parse_url($targetUrl);
+    if (!$parts || !isset($parts['scheme'], $parts['host'])) {
+        fail(400, 'Invalid URL');
+    }
+    $scheme = strtolower((string) $parts['scheme']);
+    if ($scheme !== 'http' && $scheme !== 'https') {
+        fail(400, 'Only http/https URLs are allowed');
+    }
+
+    $psiToken = getenv('GOOGLE_PAGESPEED_API_KEY');
+    if (!$psiToken) {
+        $psiToken = getenv('PSI_API_KEY');
+    }
+    if (!$psiToken && defined('GOOGLE_PAGESPEED_API_KEY')) {
+        $psiToken = (string) GOOGLE_PAGESPEED_API_KEY;
+    }
+    if (!$psiToken && defined('PSI_API_KEY')) {
+        $psiToken = (string) PSI_API_KEY;
+    }
+    if (!$psiToken) {
+        fail(503, 'PageSpeed API key is not configured');
+    }
+
+    $apiUrl = 'https://www.googleapis.com/pagespeedonline/v5/runPagespeed'
+        . '?url=' . rawurlencode($targetUrl)
+        . '&key=' . rawurlencode($psiToken)
+        . '&category=performance&category=accessibility&category=best-practices&category=seo';
+
+    try {
+        $result = fetch_remote(
+            $apiUrl,
+            ['Accept: application/json'],
+            8,
+            25
+        );
+    } catch (Throwable $e) {
+        fail(502, $e->getMessage());
+    }
+
+    http_response_code($result['status']);
+    header('Content-Type: application/json; charset=utf-8');
+    echo $result['body'];
+    exit;
+}
+
 // Generic URL proxy mode used by scanner fetches.
 $rawUrl = isset($_GET['url']) ? trim((string) $_GET['url']) : '';
 if ($rawUrl === '') {

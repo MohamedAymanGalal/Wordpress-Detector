@@ -1903,11 +1903,29 @@
 
         async function fetchPageSpeed(url) {
             try {
-                if (!PSI_API_KEY) return null;
-                const apiUrl = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(url)}&key=${PSI_API_KEY}&category=performance&category=accessibility&category=best-practices&category=seo`;
-                const resp = await fetch(apiUrl);
-                if (!resp.ok) throw new Error(`PSI API error ${resp.status}`);
-                const data = await resp.json();
+                let data = null;
+
+                // Prefer server-side endpoint (uses server token).
+                try {
+                    const serverResp = await fetch(`proxy.php?action=pagespeed&url=${encodeURIComponent(url)}`);
+                    if (serverResp.ok) {
+                        data = await serverResp.json();
+                    } else if (!PSI_API_KEY) {
+                        throw new Error(`PSI API error ${serverResp.status}`);
+                    }
+                } catch {
+                    if (!PSI_API_KEY) throw new Error('PSI API key missing');
+                }
+
+                // Optional frontend fallback when a browser key is provided.
+                if (!data) {
+                    if (!PSI_API_KEY) return null;
+                    const apiUrl = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(url)}&key=${PSI_API_KEY}&category=performance&category=accessibility&category=best-practices&category=seo`;
+                    const resp = await fetch(apiUrl);
+                    if (!resp.ok) throw new Error(`PSI API error ${resp.status}`);
+                    data = await resp.json();
+                }
+
                 const cats = data.lighthouseResult?.categories || {};
                 const audits = data.lighthouseResult?.audits || {};
                 const perfRefs = cats.performance?.auditRefs || [];
@@ -1994,9 +2012,7 @@
                 psiBadge.textContent = 'Unavailable';
                 psiBadge.className = 'accordion-badge yellow';
                 loadingEl.style.display = 'block';
-                loadingEl.textContent = PSI_API_KEY
-                    ? 'PageSpeed data is unavailable for this URL right now.'
-                    : 'PageSpeed API key is not configured.';
+                loadingEl.textContent = 'PageSpeed data is unavailable. Configure `GOOGLE_PAGESPEED_API_KEY`/`PSI_API_KEY` on server (or `window.WP_INSPECTOR_PSI_API_KEY` in frontend).';
                 document.getElementById('psiSuggestionsToggle').style.display = 'none';
                 document.getElementById('psiSuggestionsContainer').innerHTML = '';
                 return;
