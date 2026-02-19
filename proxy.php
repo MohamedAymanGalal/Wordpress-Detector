@@ -10,6 +10,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
+// Optional local config fallback (not committed): define('WPSCAN_API_TOKEN', '...');
+@include_once __DIR__ . '/config.php';
+
 function fail(int $status, string $message): void
 {
     http_response_code($status);
@@ -76,6 +79,9 @@ function block_private_destinations(string $host): void
 // Dedicated vulnerability lookup endpoint (WPScan API v3).
 if (isset($_GET['action']) && $_GET['action'] === 'wpvuln') {
     $token = getenv('WPSCAN_API_TOKEN');
+    if (!$token && defined('WPSCAN_API_TOKEN')) {
+        $token = (string) WPSCAN_API_TOKEN;
+    }
     if (!$token) {
         fail(503, 'WPScan API token is not configured');
     }
