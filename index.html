@@ -1268,6 +1268,7 @@
 
             <div class="tabs">
                 <button class="tab active" onclick="switchTab('single')">Single URL</button>
+                <button class="tab" onclick="switchTab('email')">Email Check</button>
                 <button class="tab" onclick="switchTab('bulk')">Bulk Check</button>
                 <button class="tab" onclick="switchTab('history')">History</button>
             </div>
@@ -1419,6 +1420,34 @@
                 </div>
             </div>
 
+            <!-- Email Deliverability Tab -->
+            <div class="tab-content" id="tab-email">
+                <div class="input-group">
+                    <input type="text" id="mailDomainInput" placeholder="e.g. yourdomain.com or info@yourdomain.com" />
+                    <button id="mailCheckBtn" onclick="runMailCheck()">Check Deliverability</button>
+                </div>
+                <div class="error-msg" id="mailErrorMsg"></div>
+                <div class="loading" id="mailLoading">
+                    <div class="spinner"></div>
+                    <div class="loading-text" id="mailLoadingText">Checking DNS email records...</div>
+                </div>
+                <div class="results" id="mailResults">
+                    <div class="verdict" id="mailVerdict">
+                        <div class="verdict-label">Deliverability</div>
+                        <div class="verdict-text" id="mailVerdictText"></div>
+                        <div class="confidence" id="mailScoreText"></div>
+                    </div>
+                    <div class="result-details" style="margin-top:14px">
+                        <div class="details-title">Checks</div>
+                        <div id="mailChecksRows"></div>
+                    </div>
+                    <div class="result-details" style="margin-top:14px">
+                        <div class="details-title">Recommendations</div>
+                        <div id="mailRecsRows"></div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Bulk Check Tab -->
             <div class="tab-content" id="tab-bulk">
                 <div class="sub-tabs">
@@ -1533,9 +1562,10 @@
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
             document.querySelector(`.tab-content#tab-${tab}`).classList.add('active');
+            const tabIndex = { single: 0, email: 1, bulk: 2, history: 3 };
             const tabs = document.querySelectorAll('.tab');
-            const idx = tab === 'single' ? 0 : tab === 'bulk' ? 1 : 2;
-            tabs[idx].classList.add('active');
+            const idx = tabIndex[tab];
+            if (idx != null && tabs[idx]) tabs[idx].classList.add('active');
             if (tab === 'history') renderHistory();
         }
 
@@ -3564,6 +3594,135 @@
             el.classList.add('active');
         }
 
+        function extractDomainFromInput(input) {
+            let raw = String(input || '').trim().toLowerCase();
+            if (!raw) return '';
+            if (raw.includes('@')) {
+                const parts = raw.split('@');
+                raw = parts[parts.length - 1] || '';
+            }
+            raw = raw.replace(/^https?:\/\//, '');
+            raw = raw.replace(/\/.*$/, '');
+            raw = raw.replace(/:\d+$/, '');
+            raw = raw.replace(/^\.+|\.+$/g, '');
+            return raw;
+        }
+
+        function summarizeMailCheck(data) {
+            const checks = [];
+            const recs = [];
+            let points = 0;
+            let maxPoints = 0;
+
+            const add = (ok, label, detail, pts, suggestion = null, warn = false) => {
+                maxPoints += pts;
+                if (ok) points += pts;
+                checks.push({ ok, label, detail, warn });
+                if (!ok && suggestion) recs.push(suggestion);
+            };
+
+            const mxCount = (data.mx && Array.isArray(data.mx.records)) ? data.mx.records.length : 0;
+            add(mxCount > 0, 'MX Records', mxCount > 0 ? `${mxCount} MX record(s) found` : 'No MX records found', 25, 'Add valid MX records for your email provider.');
+
+            const spf = data.spf || {};
+            const spfOk = !!spf.ok;
+            const spfIssues = Array.isArray(spf.issues) ? spf.issues : [];
+            add(spfOk, 'SPF Record', spfOk ? `Found SPF: ${spf.record}` : 'No SPF record found', 20, 'Publish an SPF TXT record (for example: v=spf1 include:provider.example -all).');
+            if (spfOk && spfIssues.length > 0) {
+                checks.push({ ok: false, label: 'SPF Quality', detail: spfIssues.join('; '), warn: true });
+                recs.push('Tighten SPF policy: avoid +all, prefer -all, and keep include list minimal.');
+                maxPoints += 5;
+                points += 1;
+            } else if (spfOk) {
+                checks.push({ ok: true, label: 'SPF Quality', detail: 'SPF policy looks strict enough', warn: false });
+                maxPoints += 5;
+                points += 5;
+            }
+
+            const dmarc = data.dmarc || {};
+            const dmarcOk = !!dmarc.ok;
+            add(dmarcOk, 'DMARC Record', dmarcOk ? `Policy ${dmarc.policy || 'unknown'}${dmarc.pct != null ? `, pct=${dmarc.pct}` : ''}` : 'No DMARC record found', 20, 'Publish a DMARC TXT record at _dmarc.yourdomain (start with p=none, move to quarantine/reject).');
+            if (dmarcOk) {
+                const strict = dmarc.policy === 'reject' || dmarc.policy === 'quarantine';
+                checks.push({ ok: strict, label: 'DMARC Enforcement', detail: strict ? `Enforced policy: ${dmarc.policy}` : `Non-enforcing policy: ${dmarc.policy || 'none'}`, warn: !strict });
+                maxPoints += 5;
+                points += strict ? 5 : 2;
+                if (!strict) recs.push('Move DMARC policy from p=none to p=quarantine or p=reject after monitoring.');
+            }
+
+            const dkim = data.dkim || {};
+            const dkimSelectors = Array.isArray(dkim.found_selectors) ? dkim.found_selectors : [];
+            add(!!dkim.ok, 'DKIM Record', dkim.ok ? `Found selector(s): ${dkimSelectors.join(', ')}` : 'No DKIM selector found in common selector list', 20, 'Configure DKIM signing with your mail provider and publish selector TXT records.');
+
+            const hasRua = dmarcOk && !!(dmarc.rua && String(dmarc.rua).trim() !== '');
+            add(hasRua, 'DMARC Reporting', hasRua ? `RUA configured: ${dmarc.rua}` : 'No DMARC aggregate reporting (rua) found', 5, 'Add rua=mailto:you@yourdomain.com to DMARC to monitor deliverability issues.');
+
+            const score = maxPoints > 0 ? Math.round((points / maxPoints) * 100) : 0;
+            let verdict = 'Poor';
+            if (score >= 85) verdict = 'Excellent';
+            else if (score >= 70) verdict = 'Good';
+            else if (score >= 50) verdict = 'Needs Work';
+
+            return { score, verdict, checks, recs: [...new Set(recs)] };
+        }
+
+        async function runMailCheck() {
+            const input = document.getElementById('mailDomainInput').value;
+            const domain = extractDomainFromInput(input);
+            const btn = document.getElementById('mailCheckBtn');
+            const err = document.getElementById('mailErrorMsg');
+            const loading = document.getElementById('mailLoading');
+            const results = document.getElementById('mailResults');
+
+            err.classList.remove('active');
+            results.classList.remove('active');
+
+            if (!domain || !/^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i.test(domain)) {
+                showError('mailErrorMsg', 'Enter a valid domain or email address.');
+                return;
+            }
+
+            btn.disabled = true;
+            loading.classList.add('active');
+            try {
+                const resp = await fetch(`proxy.php?action=mailcheck&domain=${encodeURIComponent(domain)}`);
+                if (!resp.ok) {
+                    const txt = await resp.text().catch(() => '');
+                    throw new Error(txt || `Mail check failed (${resp.status})`);
+                }
+                const data = await resp.json();
+                const summary = summarizeMailCheck(data);
+
+                const verdict = document.getElementById('mailVerdict');
+                const verdictText = document.getElementById('mailVerdictText');
+                const scoreText = document.getElementById('mailScoreText');
+                const checksRows = document.getElementById('mailChecksRows');
+                const recsRows = document.getElementById('mailRecsRows');
+
+                verdict.className = 'verdict ' + (summary.score >= 70 ? 'is-wp' : summary.score >= 50 ? '' : 'not-wp');
+                verdictText.textContent = `${summary.verdict} Deliverability`;
+                scoreText.textContent = `${summary.score}/100 · ${escapeHtml(data.domain || domain)}`;
+
+                checksRows.innerHTML = summary.checks.map(c => `
+                    <div class="detail-row">
+                        <span class="label">${c.ok ? 'PASS' : (c.warn ? 'WARN' : 'FAIL')} · ${escapeHtml(c.label)}</span>
+                        <span class="value">${escapeHtml(c.detail)}</span>
+                    </div>
+                `).join('');
+
+                recsRows.innerHTML = summary.recs.length > 0
+                    ? summary.recs.map(r => `<div class="detail-row"><span class="label">Action</span><span class="value">${escapeHtml(r)}</span></div>`).join('')
+                    : '<div class="detail-row"><span class="label">Status</span><span class="value">No major recommendations.</span></div>';
+
+                results.classList.add('active');
+            } catch (e) {
+                showError('mailErrorMsg', String(e && e.message ? e.message : e || 'Mail check failed.'));
+            } finally {
+                loading.classList.remove('active');
+                btn.disabled = false;
+            }
+        }
+
         function displayResults(isWordPress, confidence, checks, version, theme, pageBuilder, plugins, scanTime, ssl, security, domainExpiry, infra = null) {
             const results = document.getElementById('results');
             const verdict = document.getElementById('verdict');
@@ -4107,6 +4266,9 @@
         // Enter key for single scan
         document.getElementById('urlInput').addEventListener('keydown', e => {
             if (e.key === 'Enter') scan();
+        });
+        document.getElementById('mailDomainInput').addEventListener('keydown', e => {
+            if (e.key === 'Enter') runMailCheck();
         });
     </script>
 </body>

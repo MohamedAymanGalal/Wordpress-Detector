@@ -264,6 +264,125 @@ if (isset($_GET['action']) && $_GET['action'] === 'headers') {
     exit;
 }
 
+if (isset($_GET['action']) && $_GET['action'] === 'mailcheck') {
+    $rawDomain = isset($_GET['domain']) ? trim((string) $_GET['domain']) : '';
+    if ($rawDomain === '') {
+        fail(400, 'Missing domain parameter');
+    }
+
+    $rawDomain = preg_replace('#^https?://#i', '', $rawDomain);
+    $rawDomain = preg_replace('#/.*$#', '', (string) $rawDomain);
+    $rawDomain = preg_replace('/:\d+$/', '', (string) $rawDomain);
+    $rawDomain = strtolower(trim((string) $rawDomain, " \t\n\r\0\x0B."));
+    if ($rawDomain === '' || !preg_match('/^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i', $rawDomain)) {
+        fail(400, 'Invalid domain');
+    }
+
+    block_private_destinations($rawDomain);
+
+    $result = [
+        'domain' => $rawDomain,
+        'mx' => ['ok' => false, 'records' => []],
+        'spf' => ['ok' => false, 'record' => null, 'issues' => []],
+        'dmarc' => ['ok' => false, 'record' => null, 'policy' => null, 'pct' => null, 'rua' => null],
+        'dkim' => ['ok' => false, 'found_selectors' => [], 'checked_selectors' => []],
+    ];
+
+    $mxRecords = @dns_get_record($rawDomain, DNS_MX);
+    if (is_array($mxRecords)) {
+        $rows = [];
+        foreach ($mxRecords as $mx) {
+            if (!isset($mx['target'])) {
+                continue;
+            }
+            $rows[] = [
+                'host' => (string) $mx['target'],
+                'pri' => isset($mx['pri']) ? (int) $mx['pri'] : null,
+            ];
+        }
+        usort($rows, static function (array $a, array $b): int {
+            return (int) ($a['pri'] ?? 0) <=> (int) ($b['pri'] ?? 0);
+        });
+        $result['mx']['records'] = $rows;
+        $result['mx']['ok'] = count($rows) > 0;
+    }
+
+    $txtRecords = @dns_get_record($rawDomain, DNS_TXT);
+    if (is_array($txtRecords)) {
+        $spf = null;
+        foreach ($txtRecords as $txt) {
+            $v = isset($txt['txt']) ? (string) $txt['txt'] : (isset($txt['entries'][0]) ? (string) $txt['entries'][0] : '');
+            if ($v !== '' && stripos($v, 'v=spf1') === 0) {
+                $spf = $v;
+                break;
+            }
+        }
+        if ($spf !== null) {
+            $result['spf']['record'] = $spf;
+            $result['spf']['ok'] = true;
+            if (stripos($spf, '+all') !== false) {
+                $result['spf']['issues'][] = 'SPF uses +all (too permissive)';
+            }
+            if (!preg_match('/[~-]all\b/i', $spf)) {
+                $result['spf']['issues'][] = 'SPF missing explicit all mechanism';
+            }
+            if (stripos($spf, '?all') !== false) {
+                $result['spf']['issues'][] = 'SPF uses ?all (neutral)';
+            }
+            if (stripos($spf, '~all') !== false) {
+                $result['spf']['issues'][] = 'SPF uses softfail (~all)';
+            }
+        }
+    }
+
+    $dmarcDomain = '_dmarc.' . $rawDomain;
+    $dmarcTxt = @dns_get_record($dmarcDomain, DNS_TXT);
+    if (is_array($dmarcTxt)) {
+        foreach ($dmarcTxt as $txt) {
+            $v = isset($txt['txt']) ? (string) $txt['txt'] : (isset($txt['entries'][0]) ? (string) $txt['entries'][0] : '');
+            if ($v !== '' && stripos($v, 'v=DMARC1') === 0) {
+                $result['dmarc']['ok'] = true;
+                $result['dmarc']['record'] = $v;
+                if (preg_match('/\bp=([a-z]+)/i', $v, $m)) {
+                    $result['dmarc']['policy'] = strtolower((string) $m[1]);
+                }
+                if (preg_match('/\bpct=(\d{1,3})/i', $v, $m)) {
+                    $result['dmarc']['pct'] = (int) $m[1];
+                }
+                if (preg_match('/\brua=([^;]+)/i', $v, $m)) {
+                    $result['dmarc']['rua'] = trim((string) $m[1]);
+                }
+                break;
+            }
+        }
+    }
+
+    $selectors = ['default', 'selector1', 'selector2', 'google', 'k1', 'mail', 'smtp'];
+    $result['dkim']['checked_selectors'] = $selectors;
+    $found = [];
+    foreach ($selectors as $sel) {
+        $dkimHost = $sel . '._domainkey.' . $rawDomain;
+        $dkimTxt = @dns_get_record($dkimHost, DNS_TXT);
+        if (!is_array($dkimTxt) || count($dkimTxt) === 0) {
+            continue;
+        }
+        foreach ($dkimTxt as $txt) {
+            $v = isset($txt['txt']) ? (string) $txt['txt'] : (isset($txt['entries'][0]) ? (string) $txt['entries'][0] : '');
+            if ($v !== '' && stripos($v, 'v=DKIM1') !== false) {
+                $found[] = $sel;
+                break;
+            }
+        }
+    }
+    $result['dkim']['found_selectors'] = $found;
+    $result['dkim']['ok'] = count($found) > 0;
+
+    http_response_code(200);
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode($result, JSON_UNESCAPED_SLASHES);
+    exit;
+}
+
 // Generic URL proxy mode used by scanner fetches.
 $rawUrl = isset($_GET['url']) ? trim((string) $_GET['url']) : '';
 if ($rawUrl === '') {
