@@ -60,6 +60,7 @@ function fetch_remote(string $url, array $headers = [], int $connectTimeout = 8,
 function fetch_headers_only(string $url, int $connectTimeout = 6, int $timeout = 10): array
 {
     $collected = [];
+    $setCookies = [];
     $ch = curl_init($url);
     if ($ch === false) {
         throw new RuntimeException('Failed to initialize request');
@@ -72,7 +73,7 @@ function fetch_headers_only(string $url, int $connectTimeout = 6, int $timeout =
         CURLOPT_CONNECTTIMEOUT => $connectTimeout,
         CURLOPT_TIMEOUT => $timeout,
         CURLOPT_USERAGENT => 'WP Inspector Proxy/1.0',
-        CURLOPT_HEADERFUNCTION => static function ($ch, $line) use (&$collected) {
+        CURLOPT_HEADERFUNCTION => static function ($ch, $line) use (&$collected, &$setCookies) {
             $trim = trim($line);
             if ($trim === '' || strpos($trim, ':') === false) {
                 return strlen($line);
@@ -80,10 +81,14 @@ function fetch_headers_only(string $url, int $connectTimeout = 6, int $timeout =
             [$name, $value] = explode(':', $trim, 2);
             $key = strtolower(trim($name));
             $val = trim($value);
-            if (!isset($collected[$key])) {
-                $collected[$key] = $val;
+            if ($key === 'set-cookie') {
+                $setCookies[] = $val;
             } else {
-                $collected[$key] .= ', ' . $val;
+                if (!isset($collected[$key])) {
+                    $collected[$key] = $val;
+                } else {
+                    $collected[$key] .= ', ' . $val;
+                }
             }
             return strlen($line);
         },
@@ -97,11 +102,14 @@ function fetch_headers_only(string $url, int $connectTimeout = 6, int $timeout =
         throw new RuntimeException('Header fetch failed: ' . $err);
     }
     $statusCode = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+    $effectiveUrl = (string) curl_getinfo($ch, CURLINFO_EFFECTIVE_URL);
     curl_close($ch);
 
     return [
         'status' => $statusCode > 0 ? $statusCode : 200,
+        'final_url' => $effectiveUrl !== '' ? $effectiveUrl : $url,
         'headers' => $collected,
+        'set_cookie' => $setCookies,
     ];
 }
 
@@ -247,7 +255,12 @@ if (isset($_GET['action']) && $_GET['action'] === 'headers') {
 
     http_response_code($result['status']);
     header('Content-Type: application/json; charset=utf-8');
-    echo json_encode(['headers' => $result['headers']], JSON_UNESCAPED_SLASHES);
+    echo json_encode([
+        'status' => $result['status'],
+        'final_url' => $result['final_url'],
+        'headers' => $result['headers'],
+        'set_cookie' => $result['set_cookie'],
+    ], JSON_UNESCAPED_SLASHES);
     exit;
 }
 

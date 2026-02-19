@@ -1490,6 +1490,7 @@
         // Configure your backend proxy endpoint here (or inject via window.WP_INSPECTOR_PROXY_URL).
         // cPanel default: place proxy.php next to index.html.
         const PROXY_ENDPOINT = window.WP_INSPECTOR_PROXY_URL || 'proxy.php?url=';
+        const PROXY_ACTION_ENDPOINT = window.WP_INSPECTOR_PROXY_ACTION_URL || (String(PROXY_ENDPOINT).split('?')[0] || 'proxy.php');
         const PROXIES = [
             { url: PROXY_ENDPOINT, encode: true }
         ];
@@ -1754,6 +1755,74 @@
             return await proxyFetch(url, timeoutMs);
         }
 
+        async function fetchProxyHeaders(url, timeoutMs = fetchTimeout) {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), timeoutMs);
+            try {
+                const actionUrl = `${PROXY_ACTION_ENDPOINT}?action=headers&url=${encodeURIComponent(url)}`;
+                const resp = await fetch(actionUrl, { signal: controller.signal });
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                const text = await resp.text();
+                const data = JSON.parse(text);
+                return {
+                    status: data && data.status != null ? data.status : null,
+                    finalUrl: data && data.final_url ? data.final_url : null,
+                    headers: data && data.headers ? data.headers : {},
+                    setCookie: data && Array.isArray(data.set_cookie) ? data.set_cookie : []
+                };
+            } finally {
+                clearTimeout(timer);
+            }
+        }
+
+        function analyzeCookieFlags(setCookieHeaders) {
+            const cookies = (setCookieHeaders || []).filter(Boolean).map(v => String(v));
+            if (cookies.length === 0) {
+                return { observed: false, allSecure: false, allHttpOnly: false, allSameSite: false, cookieCount: 0 };
+            }
+
+            let secureCount = 0;
+            let httpOnlyCount = 0;
+            let sameSiteCount = 0;
+            for (const raw of cookies) {
+                const attrs = raw.split(';').slice(1).map(s => s.trim().toLowerCase());
+                if (attrs.some(a => a === 'secure')) secureCount += 1;
+                if (attrs.some(a => a === 'httponly')) httpOnlyCount += 1;
+                if (attrs.some(a => a.startsWith('samesite='))) sameSiteCount += 1;
+            }
+
+            return {
+                observed: true,
+                allSecure: secureCount === cookies.length,
+                allHttpOnly: httpOnlyCount === cookies.length,
+                allSameSite: sameSiteCount === cookies.length,
+                cookieCount: cookies.length
+            };
+        }
+
+        async function collectExpandedSecuritySignals(baseUrl) {
+            try {
+                const [mainHeaders, authorHeaders, loginHeaders] = await Promise.allSettled([
+                    fetchProxyHeaders(baseUrl.origin, 9000),
+                    fetchProxyHeaders(baseUrl.origin + '/?author=1', 9000),
+                    fetchProxyHeaders(baseUrl.origin + '/wp-login.php', 9000)
+                ]);
+
+                const main = mainHeaders.status === 'fulfilled' ? mainHeaders.value : null;
+                const author = authorHeaders.status === 'fulfilled' ? authorHeaders.value : null;
+                const login = loginHeaders.status === 'fulfilled' ? loginHeaders.value : null;
+
+                const finalAuthorUrl = String((author && author.finalUrl) || '').toLowerCase();
+                const userEnumerationExposed = author ? finalAuthorUrl.includes('/author/') : null;
+                const cookieFlags = analyzeCookieFlags(login && login.setCookie ? login.setCookie : []);
+                const headers = main && main.headers ? main.headers : {};
+
+                return { headers, userEnumerationExposed, cookieFlags };
+            } catch {
+                return { headers: {}, userEnumerationExposed: null, cookieFlags: { observed: false, allSecure: false, allHttpOnly: false, allSameSite: false, cookieCount: 0 } };
+            }
+        }
+
         function delay(ms) {
             return new Promise(resolve => setTimeout(resolve, ms));
         }
@@ -1889,7 +1958,7 @@
 
         async function fetchInfraHeaders(url) {
             try {
-                const resp = await fetch(`proxy.php?action=headers&url=${encodeURIComponent(url)}`);
+                const resp = await fetch(`${PROXY_ACTION_ENDPOINT}?action=headers&url=${encodeURIComponent(url)}`);
                 if (!resp.ok) return {};
                 const data = await resp.json();
                 return data && data.headers ? data.headers : {};
@@ -2379,7 +2448,7 @@
         }
 
         // --- Security score calculation ---
-        function buildSecurityData({ ssl, version, versionExposed, xmlrpcOpen, loginExposed, readmeExposed, directoryListing, feedExposesVersion }) {
+        function buildSecurityData({ ssl, version, versionExposed, xmlrpcOpen, loginExposed, readmeExposed, directoryListing, feedExposesVersion, securityHeaders, userEnumerationExposed, cookieFlags }) {
             const findings = [];
 
             // SSL checks (25 pts total)
@@ -2440,6 +2509,69 @@
                 findings.push({ category: 'wp', label: 'Directory Listing Enabled', detail: 'wp-content/ shows file listing — exposes internal structure, plugin/theme files to attackers', level: 'bad', points: 0, maxPoints: 15, suggestion: { text: 'Disable directory browsing by adding this line to your .htaccess file:', code: 'Options -Indexes' } });
             } else {
                 findings.push({ category: 'wp', label: 'Directory Listing Disabled', detail: 'Server does not expose directory contents — internal file structure is hidden', level: 'good', points: 15, maxPoints: 15, suggestion: null });
+            }
+
+            // Security response headers (18 pts)
+            const headers = securityHeaders || {};
+            if (headers['content-security-policy']) {
+                findings.push({ category: 'headers', label: 'Content-Security-Policy Present', detail: 'CSP header is configured to reduce XSS and injection risk', level: 'good', points: 6, maxPoints: 6, suggestion: null });
+            } else {
+                findings.push({ category: 'headers', label: 'Missing Content-Security-Policy', detail: 'No CSP header detected — browsers have weaker protection against injected scripts', level: 'warn', points: 0, maxPoints: 6, suggestion: { text: 'Add a strict CSP header and tune allowed sources for your site resources.', code: "Header always set Content-Security-Policy \"default-src 'self'; script-src 'self' 'unsafe-inline' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: https:;\"" } });
+            }
+
+            if (headers['permissions-policy']) {
+                findings.push({ category: 'headers', label: 'Permissions-Policy Present', detail: 'Permissions-Policy limits access to browser features from page context', level: 'good', points: 6, maxPoints: 6, suggestion: null });
+            } else {
+                findings.push({ category: 'headers', label: 'Missing Permissions-Policy', detail: 'No Permissions-Policy header detected — browser feature access is not restricted', level: 'warn', points: 0, maxPoints: 6, suggestion: { text: 'Set Permissions-Policy to explicitly disable unused high-risk browser APIs.', code: 'Header always set Permissions-Policy "camera=(), microphone=(), geolocation=(), usb=()"' } });
+            }
+
+            if (headers['referrer-policy']) {
+                findings.push({ category: 'headers', label: 'Referrer-Policy Present', detail: `Referrer-Policy is set to "${headers['referrer-policy']}"`, level: 'good', points: 6, maxPoints: 6, suggestion: null });
+            } else {
+                findings.push({ category: 'headers', label: 'Missing Referrer-Policy', detail: 'No Referrer-Policy header detected — full URLs may leak via Referer header', level: 'warn', points: 0, maxPoints: 6, suggestion: { text: 'Add a Referrer-Policy header to reduce leakage of sensitive URL data.', code: 'Header always set Referrer-Policy "strict-origin-when-cross-origin"' } });
+            }
+
+            // User enumeration (12 pts)
+            if (userEnumerationExposed === true) {
+                findings.push({ category: 'wp', label: 'Author Enumeration Exposed', detail: 'The site appears to expose author archive paths via ?author=1 redirects', level: 'bad', points: 0, maxPoints: 12, suggestion: { text: 'Block user enumeration via permalink redirects and REST author endpoints.', code: "if (!is_admin()) {\n  if (preg_match('/author=\\d+/i', $_SERVER['QUERY_STRING'] ?? '')) {\n    wp_die('Forbidden', 403);\n  }\n}" } });
+            } else if (userEnumerationExposed === false) {
+                findings.push({ category: 'wp', label: 'Author Enumeration Not Detected', detail: 'No author archive redirect from ?author=1 was detected', level: 'good', points: 12, maxPoints: 12, suggestion: null });
+            } else {
+                findings.push({ category: 'wp', label: 'Author Enumeration Check Inconclusive', detail: 'Could not reliably confirm author enumeration behavior', level: 'warn', points: 4, maxPoints: 12, suggestion: null });
+            }
+
+            // Cookie security flags (12 pts)
+            const cookies = cookieFlags || { observed: false, allSecure: false, allHttpOnly: false, allSameSite: false, cookieCount: 0 };
+            if (!cookies.observed) {
+                findings.push({ category: 'headers', label: 'Cookie Flags Check Inconclusive', detail: 'No login cookies were observed during scan, so cookie flag checks are incomplete', level: 'warn', points: 4, maxPoints: 12, suggestion: null });
+            } else {
+                findings.push({
+                    category: 'headers',
+                    label: cookies.allSecure ? 'Cookies Use Secure Flag' : 'Cookies Missing Secure Flag',
+                    detail: cookies.allSecure ? `All observed login cookies (${cookies.cookieCount}) include Secure` : 'One or more login cookies are missing the Secure attribute',
+                    level: cookies.allSecure ? 'good' : 'warn',
+                    points: cookies.allSecure ? 4 : 0,
+                    maxPoints: 4,
+                    suggestion: cookies.allSecure ? null : { text: 'Force HTTPS and set cookie_secure in WordPress and/or reverse proxy config.', code: "define('FORCE_SSL_ADMIN', true);" }
+                });
+                findings.push({
+                    category: 'headers',
+                    label: cookies.allHttpOnly ? 'Cookies Use HttpOnly' : 'Cookies Missing HttpOnly',
+                    detail: cookies.allHttpOnly ? `All observed login cookies (${cookies.cookieCount}) include HttpOnly` : 'One or more login cookies are missing the HttpOnly attribute',
+                    level: cookies.allHttpOnly ? 'good' : 'warn',
+                    points: cookies.allHttpOnly ? 4 : 0,
+                    maxPoints: 4,
+                    suggestion: cookies.allHttpOnly ? null : { text: 'Ensure session/auth cookies are marked HttpOnly in your web server/PHP session config.', code: 'session.cookie_httponly = 1' }
+                });
+                findings.push({
+                    category: 'headers',
+                    label: cookies.allSameSite ? 'Cookies Use SameSite' : 'Cookies Missing SameSite',
+                    detail: cookies.allSameSite ? `All observed login cookies (${cookies.cookieCount}) include SameSite` : 'One or more login cookies are missing SameSite policy',
+                    level: cookies.allSameSite ? 'good' : 'warn',
+                    points: cookies.allSameSite ? 4 : 0,
+                    maxPoints: 4,
+                    suggestion: cookies.allSameSite ? null : { text: 'Set SameSite=Lax or Strict for auth/session cookies unless cross-site behavior is required.', code: 'session.cookie_samesite = "Lax"' }
+                });
             }
 
             const totalMax = findings.reduce((s, f) => s + f.maxPoints, 0);
@@ -2728,6 +2860,7 @@
             // Await SSL + domain expiry results
             const ssl = await sslPromise;
             const domainExpiry = await domainExpiryPromise;
+            const expandedSecurity = await collectExpandedSecuritySignals(baseUrl);
             const infra = detectTechStack(html, await infraPromise);
 
             // Build security data (after ssl is resolved)
@@ -2738,7 +2871,10 @@
                 loginExposed: checks['wp-login.php'],
                 readmeExposed: !!readmeExposed,
                 directoryListing: !!directoryListing,
-                feedExposesVersion: !!feedExposesVersion
+                feedExposesVersion: !!feedExposesVersion,
+                securityHeaders: expandedSecurity.headers,
+                userEnumerationExposed: expandedSecurity.userEnumerationExposed,
+                cookieFlags: expandedSecurity.cookieFlags
             });
 
             // Update security with final isWordPress
@@ -2859,6 +2995,7 @@
 
             const ssl = await sslPromise;
             const domainExpiry = await domainExpiryPromise;
+            const expandedSecurity = await collectExpandedSecuritySignals(baseUrl);
             const infra = detectTechStack(html, await infraPromise);
 
             const security = buildSecurityData({
@@ -2867,7 +3004,10 @@
                 loginExposed: checks['wp-login.php'],
                 readmeExposed: !!readmeExposed,
                 directoryListing: !!directoryListing,
-                feedExposesVersion: !!feedExposesVersion
+                feedExposesVersion: !!feedExposesVersion,
+                securityHeaders: expandedSecurity.headers,
+                userEnumerationExposed: expandedSecurity.userEnumerationExposed,
+                cookieFlags: expandedSecurity.cookieFlags
             });
             security.isWordPress = isWordPress;
             if (!isWordPress) {
