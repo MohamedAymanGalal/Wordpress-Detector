@@ -1340,9 +1340,11 @@
     <div class="toast" id="toast"></div>
 
     <script>
+        // Configure your backend proxy endpoint here (or inject via window.WP_INSPECTOR_PROXY_URL).
+        // cPanel default: place proxy.php next to index.html.
+        const PROXY_ENDPOINT = window.WP_INSPECTOR_PROXY_URL || '/proxy.php?url=';
         const PROXIES = [
-            { url: 'https://api.codetabs.com/v1/proxy/?quest=', encode: false },
-            { url: 'https://cors.eu.org/', encode: false }
+            { url: PROXY_ENDPOINT, encode: true }
         ];
 
         // --- Theme toggle ---
@@ -1493,16 +1495,17 @@
             return new URL(url);
         }
 
-        let fetchTimeout = 15000;
+        let fetchTimeout = 30000;
 
         // Detects proxy error/default pages and corporate network block pages.
         function analyzeProxyResponse(text) {
-            if (!text || text.length < 100) return 'junk';
+            if (!text || text.trim().length === 0) return 'junk';
             const start = text.substring(0, 1200).toLowerCase();
             const proxyJunkPattern = /cors[\s-]*proxy|do not use this proxy|rate[\s-]*limit exceeded|upgrade.*plan/;
             const corporateBlockPattern = /access denied|blocked by policy|security policy|web page blocked|organization policy|corporate policy|proxy authentication required|zscaler|netskope|fortiguard|blue coat|websense|umbrella/;
             if (corporateBlockPattern.test(start)) return 'blocked';
             if (proxyJunkPattern.test(start)) return 'junk';
+            if (start.includes('<html') && text.length < 120) return 'junk';
             return null;
         }
 
@@ -1544,7 +1547,13 @@
                 if (reasons.some(r => r.includes('network policy blocked proxy access'))) {
                     throw new Error('Network policy blocked proxy access');
                 }
-                if (reasons.some(r => r.includes('timeout'))) {
+                const hasTimeout = reasons.some(r => r.includes('timeout'));
+                const hasNonTimeoutFailure = reasons.some(r =>
+                    !r.includes('timeout')
+                    && !r.includes('aborted')
+                    && !r.includes('operation was aborted')
+                );
+                if (hasTimeout && !hasNonTimeoutFailure) {
                     throw new Error('Proxy request timed out');
                 }
                 throw new Error('All proxies failed');
@@ -2630,7 +2639,7 @@
             } catch (err) {
                 document.getElementById('results').classList.remove('active');
                 if (isNetworkPolicyError(err)) {
-                    showError('errorMsg', 'Your network is blocking the proxy services used by this tool. This can happen on managed/work devices. Try a different network or use a self-hosted proxy endpoint.');
+                    showError('errorMsg', 'Could not reach target sites through this scanner endpoint. This is usually a managed-network policy block. If you host this tool, use a same-origin backend proxy endpoint (e.g., /proxy.php).');
                 } else {
                     showError('errorMsg', 'Could not fetch the website. Make sure the URL is correct and the site is accessible. (' + (err.message || 'Unknown error') + ')');
                 }
@@ -2917,7 +2926,7 @@
             showBulkSummary();
             container.style.display = 'block';
             if (blockedByPolicyCount > 0) {
-                showError('bulkErrorMsg', `${blockedByPolicyCount} URL(s) failed because your network blocked the proxy services used by this tool.`);
+                showError('bulkErrorMsg', `${blockedByPolicyCount} URL(s) failed due to network policy blocking access through this scanner endpoint.`);
             }
         }
 
@@ -3017,7 +3026,7 @@
             btn.disabled = false;
             btn.textContent = 'Retry Errors';
             if (blockedByPolicyCount > 0) {
-                showError('bulkErrorMsg', `${blockedByPolicyCount} retry request(s) failed because your network blocked the proxy services used by this tool.`);
+                showError('bulkErrorMsg', `${blockedByPolicyCount} retry request(s) failed due to network policy blocking access through this scanner endpoint.`);
             }
         }
 
