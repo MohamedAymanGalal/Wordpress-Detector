@@ -1495,11 +1495,20 @@
 
         let fetchTimeout = 15000;
 
-        // Detects proxy error/default pages that aren't real content
-        function isProxyJunk(text) {
-            if (text.length < 100) return true;
-            const start = text.substring(0, 600).toLowerCase();
-            return /cors[\s-]*proxy|do not use this proxy|rate[\s-]*limit exceeded|upgrade.*plan/i.test(start);
+        // Detects proxy error/default pages and corporate network block pages.
+        function analyzeProxyResponse(text) {
+            if (!text || text.length < 100) return 'junk';
+            const start = text.substring(0, 1200).toLowerCase();
+            const proxyJunkPattern = /cors[\s-]*proxy|do not use this proxy|rate[\s-]*limit exceeded|upgrade.*plan/;
+            const corporateBlockPattern = /access denied|blocked by policy|security policy|web page blocked|organization policy|corporate policy|proxy authentication required|zscaler|netskope|fortiguard|blue coat|websense|umbrella/;
+            if (corporateBlockPattern.test(start)) return 'blocked';
+            if (proxyJunkPattern.test(start)) return 'junk';
+            return null;
+        }
+
+        function isNetworkPolicyError(err) {
+            const msg = String(err && err.message ? err.message : err || '').toLowerCase();
+            return msg.includes('network policy blocked proxy access');
         }
 
         async function proxyFetch(url) {
@@ -1513,7 +1522,9 @@
                     .then(async resp => {
                         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
                         const text = await resp.text();
-                        if (isProxyJunk(text)) throw new Error('Proxy returned junk page');
+                        const responseType = analyzeProxyResponse(text);
+                        if (responseType === 'blocked') throw new Error('Network policy blocked proxy access');
+                        if (responseType === 'junk') throw new Error('Proxy returned junk page');
                         controllers.forEach((c, i) => { if (i !== idx) c.abort(); });
                         return text;
                     });
@@ -1528,7 +1539,16 @@
 
             return Promise.any([...promises, timeoutPromise].map(p =>
                 p instanceof Promise ? p : Promise.reject(p)
-            )).catch(() => { throw new Error('All proxies failed'); });
+            )).catch((err) => {
+                const reasons = err && err.errors ? err.errors.map(e => String((e && e.message) || e).toLowerCase()) : [];
+                if (reasons.some(r => r.includes('network policy blocked proxy access'))) {
+                    throw new Error('Network policy blocked proxy access');
+                }
+                if (reasons.some(r => r.includes('timeout'))) {
+                    throw new Error('Proxy request timed out');
+                }
+                throw new Error('All proxies failed');
+            });
         }
 
         async function fetchText(url) {
@@ -2609,7 +2629,11 @@
                 }
             } catch (err) {
                 document.getElementById('results').classList.remove('active');
-                showError('errorMsg', 'Could not fetch the website. Make sure the URL is correct and the site is accessible. (' + (err.message || 'Unknown error') + ')');
+                if (isNetworkPolicyError(err)) {
+                    showError('errorMsg', 'Your network is blocking the proxy services used by this tool. This can happen on managed/work devices. Try a different network or use a self-hosted proxy endpoint.');
+                } else {
+                    showError('errorMsg', 'Could not fetch the website. Make sure the URL is correct and the site is accessible. (' + (err.message || 'Unknown error') + ')');
+                }
             }
 
             clearInterval(timerInterval);
@@ -2827,6 +2851,7 @@
             bulkResultsData = [];
 
             let completed = 0;
+            let blockedByPolicyCount = 0;
             const CONCURRENCY = 3;
             const bulkStartTime = Date.now();
             const bulkTimerInterval = setInterval(() => {
@@ -2844,7 +2869,8 @@
                         try {
                             const result = await detectWordPress(url);
                             return result;
-                        } catch {
+                        } catch (err) {
+                            if (isNetworkPolicyError(err)) blockedByPolicyCount++;
                             return {
                                 url: url,
                                 isWordPress: false,
@@ -2853,7 +2879,8 @@
                                 version: null,
                                 theme: null,
                                 plugins: [],
-                                error: true
+                                error: true,
+                                errorMessage: err && err.message ? err.message : 'Unknown error'
                             };
                         }
                     })
@@ -2889,6 +2916,9 @@
 
             showBulkSummary();
             container.style.display = 'block';
+            if (blockedByPolicyCount > 0) {
+                showError('bulkErrorMsg', `${blockedByPolicyCount} URL(s) failed because your network blocked the proxy services used by this tool.`);
+            }
         }
 
         function showBulkSummary() {
@@ -2930,6 +2960,7 @@
             progressEl.classList.add('active');
 
             let completed = 0;
+            let blockedByPolicyCount = 0;
             const total = errorIndices.length;
             const CONCURRENCY = 3;
             const startTime = Date.now();
@@ -2949,7 +2980,8 @@
                         try {
                             const result = await detectWordPress(bulkResultsData[idx].url);
                             return { idx, result };
-                        } catch {
+                        } catch (err) {
+                            if (isNetworkPolicyError(err)) blockedByPolicyCount++;
                             return { idx, result: null };
                         }
                     })
@@ -2984,6 +3016,9 @@
             showBulkSummary();
             btn.disabled = false;
             btn.textContent = 'Retry Errors';
+            if (blockedByPolicyCount > 0) {
+                showError('bulkErrorMsg', `${blockedByPolicyCount} retry request(s) failed because your network blocked the proxy services used by this tool.`);
+            }
         }
 
         function appendBulkResult(result, container) {
