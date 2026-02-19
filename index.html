@@ -316,7 +316,7 @@
         }
         .kpi-row {
             display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
+            grid-template-columns: repeat(2, minmax(0, 1fr));
             gap: 10px;
         }
         .kpi-card {
@@ -1300,10 +1300,6 @@
                             <div class="confidence" id="confidenceText"></div>
                         </div>
                         <div class="kpi-row">
-                            <div class="kpi-card">
-                                <div class="kpi-label">Confidence</div>
-                                <div class="kpi-value" id="kpiConfidence">--</div>
-                            </div>
                             <div class="kpi-card">
                                 <div class="kpi-label">Checks Passed</div>
                                 <div class="kpi-value" id="kpiChecks">--</div>
@@ -2986,7 +2982,6 @@
             const verdict = document.getElementById('verdict');
             const verdictText = document.getElementById('verdictText');
             const confidenceText = document.getElementById('confidenceText');
-            const kpiConfidence = document.getElementById('kpiConfidence');
             const kpiChecks = document.getElementById('kpiChecks');
             const kpiScanTime = document.getElementById('kpiScanTime');
 
@@ -3005,7 +3000,6 @@
             verdictText.textContent = 'Scanning...';
             verdictText.style.color = 'var(--text-muted)';
             confidenceText.textContent = '';
-            kpiConfidence.textContent = '--';
             kpiChecks.textContent = '--';
             kpiScanTime.textContent = '--';
 
@@ -3098,7 +3092,6 @@
             const verdict = document.getElementById('verdict');
             const verdictText = document.getElementById('verdictText');
             const confidenceText = document.getElementById('confidenceText');
-            const kpiConfidence = document.getElementById('kpiConfidence');
             const kpiChecks = document.getElementById('kpiChecks');
             const kpiScanTime = document.getElementById('kpiScanTime');
             const passedChecks = Object.values(checks).filter(Boolean).length;
@@ -3107,7 +3100,6 @@
             verdict.className = 'verdict ' + (isWordPress ? 'is-wp' : 'not-wp');
             verdictText.textContent = isWordPress ? 'WordPress Detected' : 'Not WordPress';
             confidenceText.textContent = `${passedChecks}/${totalChecks} checks passed${scanTime ? ' \u00B7 ' + scanTime + 's' : ''}`;
-            kpiConfidence.textContent = `${confidence}%`;
             kpiChecks.textContent = `${passedChecks}/${totalChecks}`;
             kpiScanTime.textContent = scanTime ? `${scanTime}s` : '--';
 
