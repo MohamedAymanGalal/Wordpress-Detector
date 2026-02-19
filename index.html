@@ -141,7 +141,7 @@
         }
 
         .tab:not(.active):hover {
-            color: var(--bg);
+            color: var(--text-bright);
         }
 
         .tab-content { display: none; }
@@ -1663,10 +1663,31 @@
         }
 
         // --- PageSpeed Insights ---
-        const PSI_API_KEY = 'AIzaSyBEa44t8LE6HFv1r2tTe8MbpQ1NIbsSEVw';
+        const PSI_API_KEY = window.WP_INSPECTOR_PSI_API_KEY || '';
+
+        function escapeHtml(value) {
+            return String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function getStoredJson(key, fallback) {
+            try {
+                const raw = localStorage.getItem(key);
+                if (!raw) return fallback;
+                const parsed = JSON.parse(raw);
+                return parsed ?? fallback;
+            } catch {
+                return fallback;
+            }
+        }
 
         async function fetchPageSpeed(url) {
             try {
+                if (!PSI_API_KEY) return null;
                 const apiUrl = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(url)}&key=${PSI_API_KEY}&category=performance&category=accessibility&category=best-practices&category=seo`;
                 const resp = await fetch(apiUrl);
                 if (!resp.ok) throw new Error(`PSI API error ${resp.status}`);
@@ -1801,8 +1822,8 @@
                     return `<div class="psi-metric-item">
                         <span class="psi-metric-dot ${color}"></span>
                         <div class="psi-metric-info">
-                            <div class="psi-metric-name">${m.title}</div>
-                            <div class="psi-metric-val">${m.displayValue}</div>
+                            <div class="psi-metric-name">${escapeHtml(m.title)}</div>
+                            <div class="psi-metric-val">${escapeHtml(m.displayValue)}</div>
                         </div>
                     </div>`;
                 }).join('') + '</div>';
@@ -1822,10 +1843,10 @@
                         ${psi.opportunities.map(o => `<div class="psi-audit-item" onclick="togglePsiAudit(this)" style="cursor:pointer">
                             <span class="psi-audit-dot ${o.score <= 0.49 ? 'red' : 'orange'}"></span>
                             <div class="psi-audit-info">
-                                <div class="psi-audit-title">${o.title}</div>
-                                <div class="psi-audit-desc">${o.description.replace(/<[^>]+>/g, '')}</div>
+                                <div class="psi-audit-title">${escapeHtml(o.title)}</div>
+                                <div class="psi-audit-desc">${escapeHtml(o.description.replace(/<[^>]+>/g, ''))}</div>
                             </div>
-                            ${o.savings ? `<span class="psi-audit-savings">${o.savings}</span>` : ''}
+                            ${o.savings ? `<span class="psi-audit-savings">${escapeHtml(o.savings)}</span>` : ''}
                         </div>`).join('')}
                     </div>
                 </div>`;
@@ -1845,8 +1866,8 @@
                         ${psi.diagnostics.map(d => `<div class="psi-audit-item" onclick="togglePsiAudit(this)" style="cursor:pointer">
                             <span class="psi-audit-dot ${d.score <= 0.49 ? 'red' : 'orange'}"></span>
                             <div class="psi-audit-info">
-                                <div class="psi-audit-title">${d.title}${d.displayValue ? ' \u2014 ' + d.displayValue : ''}</div>
-                                <div class="psi-audit-desc">${d.description.replace(/<[^>]+>/g, '')}</div>
+                                <div class="psi-audit-title">${escapeHtml(d.title)}${d.displayValue ? ' \u2014 ' + escapeHtml(d.displayValue) : ''}</div>
+                                <div class="psi-audit-desc">${escapeHtml(d.description.replace(/<[^>]+>/g, ''))}</div>
                             </div>
                         </div>`).join('')}
                     </div>
@@ -1909,9 +1930,9 @@
                     <div class="suggestion-card">
                         <div class="suggestion-card-header">
                             <span class="sf-icon warn">!</span>
-                            <span class="suggestion-card-title">${s.title}${s.savings ? ' — ' + s.savings : ''}</span>
+                            <span class="suggestion-card-title">${escapeHtml(s.title)}${s.savings ? ' — ' + escapeHtml(s.savings) : ''}</span>
                         </div>
-                        <div class="suggestion-card-text">${s.text}${s.code ? `<code class="suggestion-code">${s.code}</code>` : ''}</div>
+                        <div class="suggestion-card-text">${escapeHtml(s.text)}${s.code ? `<code class="suggestion-code">${escapeHtml(s.code)}</code>` : ''}</div>
                     </div>
                 `).join('');
             } else {
@@ -2413,7 +2434,7 @@
         // --- Scan history ---
         function saveToHistory(result) {
             if (result.error) return; // Don't save errors to history
-            const history = JSON.parse(localStorage.getItem('wp-detector-history') || '[]');
+            const history = getStoredJson('wp-detector-history', []);
             history.unshift({
                 url: result.url,
                 isWordPress: result.isWordPress,
@@ -2434,7 +2455,7 @@
         }
 
         function renderHistory() {
-            const history = JSON.parse(localStorage.getItem('wp-detector-history') || '[]');
+            const history = getStoredJson('wp-detector-history', []);
             const container = document.getElementById('historyList');
 
             if (history.length === 0) {
@@ -2450,17 +2471,17 @@
                 const version = item.isWordPress && item.version ? ` v${item.version}` : '';
 
                 return `<div class="history-item" onclick="showFromHistory(${i})">
-                    <span class="history-url">${item.url}</span>
+                    <span class="history-url">${escapeHtml(item.url)}</span>
                     <div class="history-meta">
-                        <span class="history-time">${timeStr}</span>
-                        <span class="history-badge ${badge}">${badgeText}${version}</span>
+                        <span class="history-time">${escapeHtml(timeStr)}</span>
+                        <span class="history-badge ${badge}">${escapeHtml(badgeText + version)}</span>
                     </div>
                 </div>`;
             }).join('');
         }
 
         function showFromHistory(index) {
-            const history = JSON.parse(localStorage.getItem('wp-detector-history') || '[]');
+            const history = getStoredJson('wp-detector-history', []);
             const item = history[index];
             if (!item) return;
 
@@ -2649,13 +2670,13 @@
                 overviewBadge.textContent = parts.length > 0 ? parts.join(' · ') : (hasPlugins ? plugins.length + ' plugins' : '');
                 overviewBadge.className = 'accordion-badge blue';
 
-                if (version) infoRows.innerHTML += `<div class="detail-row"><span class="label">WordPress Version</span><span class="value">${version}</span></div>`;
-                if (theme) infoRows.innerHTML += `<div class="detail-row"><span class="label">Active Theme</span><span class="value">${theme}</span></div>`;
-                if (pageBuilder) infoRows.innerHTML += `<div class="detail-row"><span class="label">Page Builder</span><span class="value">${pageBuilder}</span></div>`;
+                if (version) infoRows.innerHTML += `<div class="detail-row"><span class="label">WordPress Version</span><span class="value">${escapeHtml(version)}</span></div>`;
+                if (theme) infoRows.innerHTML += `<div class="detail-row"><span class="label">Active Theme</span><span class="value">${escapeHtml(theme)}</span></div>`;
+                if (pageBuilder) infoRows.innerHTML += `<div class="detail-row"><span class="label">Page Builder</span><span class="value">${escapeHtml(pageBuilder)}</span></div>`;
 
                 if (hasPlugins) {
                     pluginsSection.style.display = 'block';
-                    plugins.forEach(p => { pluginsList.innerHTML += `<span class="plugin-tag">${p}</span>`; });
+                    plugins.forEach(p => { pluginsList.innerHTML += `<span class="plugin-tag">${escapeHtml(p)}</span>`; });
                 } else {
                     pluginsSection.style.display = 'none';
                 }
@@ -2677,19 +2698,19 @@
                 sslBadge.className = 'accordion-badge ' + badgeColor;
                 let domainExpiryHtml = '';
                 if (domainExpiry) {
-                    if (domainExpiry.registrationDate) domainExpiryHtml += `<div class="detail-row"><span class="label">Registered</span><span class="value">${domainExpiry.registrationDate}</span></div>`;
+                    if (domainExpiry.registrationDate) domainExpiryHtml += `<div class="detail-row"><span class="label">Registered</span><span class="value">${escapeHtml(domainExpiry.registrationDate)}</span></div>`;
                     if (domainExpiry.expiryDate) {
                         const daysLeft = domainExpiry.daysUntilExpiry;
                         const expiryClass = daysLeft != null && daysLeft < 30 ? 'expiring' : (daysLeft != null && daysLeft < 0 ? 'expired' : 'valid');
-                        domainExpiryHtml += `<div class="detail-row"><span class="label">Expires</span><span class="ssl-status ${expiryClass}">${domainExpiry.expiryDate}${daysLeft != null ? ' (' + daysLeft + ' days)' : ''}</span></div>`;
+                        domainExpiryHtml += `<div class="detail-row"><span class="label">Expires</span><span class="ssl-status ${expiryClass}">${escapeHtml(domainExpiry.expiryDate)}${daysLeft != null ? ' (' + escapeHtml(daysLeft) + ' days)' : ''}</span></div>`;
                     }
                 }
                 sslRows.innerHTML = `
                     <div class="detail-section-label">SSL Certificate</div>
                     <div class="detail-row"><span class="label">Status</span><span class="ssl-status ${statusClass}">${statusText}</span></div>
-                    <div class="detail-row"><span class="label">Issuer</span><span class="value">${ssl.issuer}</span></div>
-                    ${ssl.validTill ? `<div class="detail-row"><span class="label">Expires</span><span class="value">${ssl.validTill}</span></div>` : ''}
-                    ${ssl.daysLeft != null ? `<div class="detail-row"><span class="label">Days Left</span><span class="ssl-status ${statusClass}">${ssl.daysLeft} days</span></div>` : ''}
+                    <div class="detail-row"><span class="label">Issuer</span><span class="value">${escapeHtml(ssl.issuer)}</span></div>
+                    ${ssl.validTill ? `<div class="detail-row"><span class="label">Expires</span><span class="value">${escapeHtml(ssl.validTill)}</span></div>` : ''}
+                    ${ssl.daysLeft != null ? `<div class="detail-row"><span class="label">Days Left</span><span class="ssl-status ${statusClass}">${escapeHtml(ssl.daysLeft)} days</span></div>` : ''}
                     ${ssl.hsts ? `<div class="detail-row"><span class="label">HSTS</span><span class="value">Enabled</span></div>` : ''}
                     ${domainExpiryHtml ? `<div class="detail-section-label">Domain Registration</div>${domainExpiryHtml}` : ''}
                 `;
@@ -2985,15 +3006,15 @@
             let detailsHtml = '';
             if (!result.error) {
                 detailsHtml = `<div class="bulk-result-details" id="${id}">`;
-                if (result.version) detailsHtml += `<div class="bulk-detail-row"><span>Version</span><span class="val">${result.version}</span></div>`;
-                if (result.theme) detailsHtml += `<div class="bulk-detail-row"><span>Theme</span><span class="val">${result.theme}</span></div>`;
-                if (result.pageBuilder) detailsHtml += `<div class="bulk-detail-row"><span>Page Builder</span><span class="val">${result.pageBuilder}</span></div>`;
+                if (result.version) detailsHtml += `<div class="bulk-detail-row"><span>Version</span><span class="val">${escapeHtml(result.version)}</span></div>`;
+                if (result.theme) detailsHtml += `<div class="bulk-detail-row"><span>Theme</span><span class="val">${escapeHtml(result.theme)}</span></div>`;
+                if (result.pageBuilder) detailsHtml += `<div class="bulk-detail-row"><span>Page Builder</span><span class="val">${escapeHtml(result.pageBuilder)}</span></div>`;
                 if (result.ssl) {
                     const sslClass = result.ssl.valid ? (result.ssl.daysLeft != null && result.ssl.daysLeft < 30 ? 'expiring' : 'valid') : 'expired';
                     const sslLabel = result.ssl.valid ? (result.ssl.daysLeft != null && result.ssl.daysLeft < 30 ? 'Expiring Soon' : 'Valid') : 'Expired';
                     detailsHtml += `<div class="bulk-detail-row"><span>SSL</span><span class="ssl-status ${sslClass}">${sslLabel}</span></div>`;
-                    detailsHtml += `<div class="bulk-detail-row"><span>SSL Issuer</span><span class="val">${result.ssl.issuer}</span></div>`;
-                    if (result.ssl.validTill) detailsHtml += `<div class="bulk-detail-row"><span>SSL Expires</span><span class="val">${result.ssl.validTill}${result.ssl.daysLeft != null ? ' (' + result.ssl.daysLeft + ' days)' : ''}</span></div>`;
+                    detailsHtml += `<div class="bulk-detail-row"><span>SSL Issuer</span><span class="val">${escapeHtml(result.ssl.issuer)}</span></div>`;
+                    if (result.ssl.validTill) detailsHtml += `<div class="bulk-detail-row"><span>SSL Expires</span><span class="val">${escapeHtml(result.ssl.validTill)}${result.ssl.daysLeft != null ? ' (' + escapeHtml(result.ssl.daysLeft) + ' days)' : ''}</span></div>`;
                 }
                 if (result.security && result.security.score != null) {
                     const sc = result.security.score;
@@ -3007,9 +3028,9 @@
 
             container.innerHTML += `
                 <div class="bulk-result-item" data-type="${resultType}">
-                    <span class="bulk-result-url" title="${result.url}">${result.url}</span>
+                    <span class="bulk-result-url" title="${escapeHtml(result.url)}">${escapeHtml(result.url)}</span>
                     <div class="bulk-result-info">
-                        <span class="bulk-result-version">${versionText}</span>
+                        <span class="bulk-result-version">${escapeHtml(versionText)}</span>
                         <span class="bulk-badge ${badgeClass}">${badgeText}</span>
                         ${!result.error ? `<button class="bulk-detail-toggle" onclick="toggleDetail('${id}')">Details</button>` : ''}
                     </div>
