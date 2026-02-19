@@ -1989,7 +1989,14 @@
 
             if (!psi) {
                 scoresEl.style.display = 'none';
-                accordion.style.display = 'none';
+                accordion.style.display = 'block';
+                accordion.classList.add('open');
+                psiBadge.textContent = 'Unavailable';
+                psiBadge.className = 'accordion-badge yellow';
+                loadingEl.style.display = 'block';
+                loadingEl.textContent = PSI_API_KEY
+                    ? 'PageSpeed data is unavailable for this URL right now.'
+                    : 'PageSpeed API key is not configured.';
                 document.getElementById('psiSuggestionsToggle').style.display = 'none';
                 document.getElementById('psiSuggestionsContainer').innerHTML = '';
                 return;
